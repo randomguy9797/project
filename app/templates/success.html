@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Submission Successful — Consumer Portal{% endblock %}
+{% block content %}
+<div class="card card-success">
+  <div class="success-icon" aria-hidden="true">&#10003;</div>
+  <h1>Submission Successful</h1>
+  <p>Your submission has been received.</p>
+
+  <div class="action-buttons">
+    <a href="/form" class="btn btn-primary">Submit Another</a>
+
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button type="submit" class="btn btn-secondary">Logout</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
