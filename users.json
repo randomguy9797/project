@@ -1,0 +1,17 @@
+[
+  {
+    "username": "ramrane",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$W65dlhR6GII+puVmkrZhRQ$xhZf6QJBEIwZpWTYQ4QML+o2uMq7nSYqUwrrkWw3GWw",
+    "is_active": true
+  },
+  {
+    "username": "vijaybore",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$RA7M2xJ6NrmE0KoNuAB/6w$R3+DR35TGR7KYAS6l6Sl0jvLos5+SffsvJhIwwoCUgM",
+    "is_active": true
+  },
+  {
+    "username": "sachinchimb",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$EvLlHIOazpPn8KpBCcIB1A$vgnjG2kZFATOhpt9AYoAT3bUzrMg4HznDmR1hydB/PU",
+    "is_active": true
+  }
+]

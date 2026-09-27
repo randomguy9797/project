@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Submit Details — Consumer Portal{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Submit Details</h1>
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/form" enctype="multipart/form-data" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    <div class="field">
+      <label for="consumer_number">Consumer Number <span class="required">*</span></label>
+      <input
+        type="text"
+        id="consumer_number"
+        name="consumer_number"
+        value="{{ values.get('consumer_number', '') }}"
+        required
+        maxlength="255"
+      />
+    </div>
+
+    <div class="field">
+      <label for="consumer_new_name">Consumer New Name <span class="required">*</span></label>
+      <input
+        type="text"
+        id="consumer_new_name"
+        name="consumer_new_name"
+        value="{{ values.get('consumer_new_name', '') }}"
+        required
+        maxlength="255"
+      />
+    </div>
+
+    <div class="field">
+      <label for="mobile_number">Mobile Number <span class="required">*</span></label>
+      <input
+        type="tel"
+        id="mobile_number"
+        name="mobile_number"
+        value="{{ values.get('mobile_number', '') }}"
+        required
+        maxlength="10"
+        inputmode="numeric"
+        pattern="[6-9][0-9]{9}"
+      />
+      <span class="hint">10-digit Indian mobile number (starts with 6, 7, 8, or 9)</span>
+    </div>
+
+    <div class="field">
+      <label for="upload_file">Upload File <span class="required">*</span></label>
+      <input
+        type="file"
+        id="upload_file"
+        name="upload_file"
+        required
+        accept=".pdf,.jpg,.jpeg"
+      />
+      <span class="hint">Allowed formats: PDF, JPG, JPEG &nbsp;|&nbsp; Maximum file size: 10 MB</span>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </form>
+
+  <div class="logout-section">
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ logout_csrf }}" />
+      <button type="submit" class="btn btn-secondary">Logout</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

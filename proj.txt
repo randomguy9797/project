@@ -1,0 +1,1219 @@
+Build a complete, production-ready, lightweight web application based on the following requirements.
+
+IMPORTANT:
+Do not just provide snippets or an architectural explanation. Build the complete working project with all required source files, templates, CSS, database models, migrations, authentication, R2 integration, tests, configuration, and documentation.
+
+The application is a small personal-use application expected to handle fewer than approximately 500 submissions per month. Keep the architecture simple and avoid unnecessary complexity.
+
+==================================================
+
+TECHNOLOGY STACK
+==================================================
+
+Use:
+
+Python 3.12+
+
+FastAPI
+
+Jinja2 server-rendered HTML templates
+
+Plain HTML5
+
+Plain CSS3
+
+No frontend JavaScript
+
+PostgreSQL
+
+SQLAlchemy 2.x
+
+Alembic
+
+Cloudflare R2 for file storage
+
+boto3 or another reliable S3-compatible Python client for R2
+
+Secure server-side session authentication
+
+Argon2id or bcrypt for password hashing
+
+Uvicorn for running FastAPI
+
+Environment variables for secrets/configuration
+
+Do NOT use:
+
+React
+
+Vue
+
+Angular
+
+Bootstrap
+
+Tailwind
+
+JWT authentication
+
+Redis
+
+Celery
+
+RabbitMQ
+
+Kubernetes
+
+Microservices
+
+Elasticsearch
+
+Unnecessary background worker infrastructure
+
+Unnecessary caching systems
+
+The frontend must be server-rendered HTML and CSS.
+
+The application must work without JavaScript.
+
+==================================================
+2. APPLICATION OVERVIEW
+The application has two main user-facing pages:
+
+Login page
+
+Submission form page
+
+There are exactly 3 user accounts.
+
+Users cannot register themselves.
+
+There must NOT be a public signup page.
+
+There must NOT be a password-reset page.
+
+There must NOT be functionality to create a fourth user.
+
+However, the username and password of any of the existing 3 users may need to be changed in the future.
+
+Therefore, users must be stored in PostgreSQL rather than permanently hardcoded into Python.
+
+==================================================
+3. AUTHENTICATION
+Create a login page with:
+
+Username
+
+Password
+
+Login button
+
+Authenticate against the PostgreSQL users table.
+
+Only the existing 3 users can log in.
+
+For invalid credentials, show:
+
+"Invalid username or password."
+
+Do not reveal whether the username or password was incorrect.
+
+Do not expose sensitive authentication details.
+
+==================================================
+4. PASSWORD STORAGE
+Never store plaintext passwords in PostgreSQL.
+
+Use Argon2id or bcrypt to hash passwords.
+
+The initial 3 users will be created using a seed/management command.
+
+The seed command can receive plaintext passwords from the user, but only password hashes should be stored in PostgreSQL.
+
+Passwords must never appear in:
+
+Database
+
+Logs
+
+Browser cookies
+
+HTML
+
+API responses
+
+==================================================
+5. USER MANAGEMENT
+There will always be exactly 3 users.
+
+Do NOT create an admin webpage.
+
+Instead, provide a CLI management command that allows the application owner to change the username and/or password of any of the existing 3 users.
+
+Example:
+
+python scripts/manage_user.py
+
+The command should:
+
+Display the existing 3 users.
+
+Allow selecting user 1, 2, or 3.
+
+Allow changing username.
+
+Allow changing password.
+
+Allow changing both.
+
+Allow cancelling.
+
+Example interface:
+
+Existing users:
+
+user_one
+
+user_two
+
+user_three
+
+Select user:
+
+Then:
+
+Change username
+
+Change password
+
+Change both
+
+Cancel
+
+When changing a password:
+
+Never display the existing password.
+
+Hash the new password before storing it.
+
+When changing a username:
+
+Validate that the username is not already used.
+
+Enforce uniqueness at the PostgreSQL level.
+
+The management command must NEVER create a fourth user.
+
+==================================================
+6. INITIAL USER SEEDING
+Provide a seed script:
+
+python scripts/seed_users.py
+
+It should allow the owner to create the initial 3 users.
+
+Example:
+
+Username for user 1:
+Password for user 1:
+
+Username for user 2:
+Password for user 2:
+
+Username for user 3:
+Password for user 3:
+
+Passwords should not be echoed to the terminal if practical.
+
+Hash all passwords before storing them.
+
+The script must:
+
+Create exactly 3 users.
+
+Reject duplicate usernames.
+
+Refuse to create additional users if 3 users already exist.
+
+==================================================
+7. SESSION AUTHENTICATION
+Use server-side session authentication.
+
+Do NOT use JWT.
+
+After successful login, create an authenticated session.
+
+Session requirements:
+
+Session lifetime: 1 hour
+
+HTTPOnly cookie
+
+Secure cookie in production
+
+SameSite=Lax
+
+Session must expire after 1 hour
+
+Logout must invalidate the session
+
+Unauthenticated users accessing the submission form must be redirected to /login
+
+Do not store passwords or sensitive authentication information in cookies.
+
+Protect against session fixation by regenerating/creating a new authenticated session after successful login.
+
+==================================================
+8. CSRF PROTECTION
+Because authentication uses cookies, implement CSRF protection for state-changing POST requests.
+
+At minimum:
+
+Login POST must have CSRF protection.
+
+Submission POST must have CSRF protection.
+
+Logout POST should also be protected.
+
+Use a lightweight server-side CSRF implementation.
+
+Do not rely only on SameSite cookies as CSRF protection.
+
+==================================================
+9. ROUTES
+Use a simple route structure similar to:
+
+GET /login
+POST /login
+POST /logout
+
+GET /form
+POST /form
+
+Additional health/status routes may be added if useful for deployment.
+
+The /form route must require authentication.
+
+==================================================
+10. SUBMISSION FORM
+After successful login, redirect the user to the submission form.
+
+The form should have a clean, simple interface similar in usability to Google Forms, but do not copy Google's exact design.
+
+Required fields:
+
+Consumer Number
+
+Consumer New Name
+
+Mobile Number
+
+File Upload
+
+Consumer Number
+Required.
+
+Text input.
+
+No special format validation.
+
+Do not restrict it to numeric-only.
+
+Preserve the submitted value.
+
+Trim unnecessary leading/trailing whitespace.
+
+Consumer New Name
+Required.
+
+Text input.
+
+Trim leading/trailing whitespace.
+
+Do not impose unnecessary restrictions on names.
+
+Mobile Number
+Required.
+
+Must be a valid Indian 10-digit mobile number.
+
+Must start with 6, 7, 8, or 9.
+
+Use this validation pattern:
+
+^[6-9][0-9]{9}$
+
+Validation must happen server-side.
+
+File Upload
+Required.
+
+Allowed formats:
+
+PDF
+
+JPG
+
+JPEG
+
+Maximum size: 10 MB.
+
+Reject files larger than 10 MB.
+
+Validate the actual file as far as reasonably practical.
+
+Do not trust only the browser-provided MIME type.
+
+Do not trust only the file extension.
+
+Clearly show:
+
+"Allowed formats: PDF, JPG, JPEG"
+"Maximum file size: 10 MB"
+
+==================================================
+11. FILE STORAGE
+Uploaded files must NOT be permanently stored on the FastAPI server.
+
+FastAPI should upload the file to Cloudflare R2.
+
+Cloudflare R2 is S3-compatible.
+
+Use environment variables:
+
+R2_ENDPOINT_URL=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
+
+Never hardcode R2 credentials.
+
+The R2 bucket should be private.
+
+Do not expose public R2 URLs to users.
+
+==================================================
+12. R2 OBJECT NAMING
+Do not use the original filename as the R2 object key.
+
+Generate a UUID-based object name.
+
+Use a structure similar to:
+
+uploads/2026/09/<uuid>.pdf
+
+Example:
+
+uploads/2026/09/550e8400-e29b-41d4-a716-446655440000.pdf
+
+The extension must correspond to the validated file type.
+
+Store the original filename separately in PostgreSQL.
+
+This prevents:
+
+Filename collisions
+
+Unsafe filenames
+
+Path traversal problems
+
+Problems caused by special characters
+
+==================================================
+13. FILE RETENTION
+Uploaded files should automatically be deleted after 10 days.
+
+Use Cloudflare R2 lifecycle rules.
+
+Do NOT rely on a FastAPI background task for deletion.
+
+Configure an R2 lifecycle rule for uploaded files under:
+
+uploads/
+
+The desired lifecycle is:
+
+Upload
+↓
+Private R2 storage
+↓
+10 days
+↓
+Automatic deletion
+
+The database submission metadata may remain after the file has been deleted.
+
+The application must not assume that an old R2 file still exists.
+
+==================================================
+14. DATABASE
+Use PostgreSQL.
+
+Use SQLAlchemy 2.x.
+
+Use Alembic for migrations.
+
+Create at least the following tables.
+
+users
+Suggested fields:
+
+id
+username
+password_hash
+is_active
+created_at
+updated_at
+
+Requirements:
+
+username must be unique.
+
+password_hash must contain only hashed passwords.
+
+is_active should allow an account to be disabled later.
+
+Exactly 3 users should exist.
+
+submissions
+Suggested fields:
+
+id
+consumer_number
+consumer_new_name
+mobile_number
+original_filename
+r2_object_key
+file_size
+submitted_by
+created_at
+
+Relationship:
+
+users 1 ---- many submissions
+
+submitted_by should reference the user who submitted the form.
+
+Add an index on created_at.
+
+Do NOT make consumer_number unique.
+
+The same consumer number may be submitted multiple times.
+
+Do not store the actual uploaded file in PostgreSQL.
+
+Only store its metadata and R2 object key.
+
+==================================================
+15. SUBMISSION FLOW
+When a user submits the form:
+
+Verify that the user has an active authenticated session.
+
+Validate the CSRF token.
+
+Validate all required fields.
+
+Validate the mobile number.
+
+Validate the uploaded file.
+
+Validate file size.
+
+Validate file type.
+
+Generate a UUID-based R2 object key.
+
+Upload the file to R2.
+
+Create the PostgreSQL submission record.
+
+Commit the transaction.
+
+Show a success page.
+
+Show:
+
+"Submission successful."
+
+Optionally display a submission/reference ID.
+
+Do not expose technical information.
+
+==================================================
+16. FAILURE HANDLING
+Handle partial failures properly.
+
+Case 1:
+
+R2 upload succeeds but PostgreSQL insert fails.
+
+Attempt to delete the newly uploaded R2 object so that an orphaned file is not unnecessarily left behind.
+
+Case 2:
+
+R2 upload fails.
+
+Do not create a PostgreSQL submission record.
+
+Show:
+
+"We couldn't submit your form. Please try again."
+
+Log the technical error server-side.
+
+Never show:
+
+Stack traces
+
+Database errors
+
+R2 credentials
+
+SQL errors
+
+Internal application paths
+
+Secret configuration
+
+to the user.
+
+==================================================
+17. SUCCESS PAGE
+After a successful submission, show a simple success page.
+
+Example:
+
+Submission Successful
+
+Your submission has been received.
+
+[ Submit Another ]
+
+[ Logout ]
+
+Because users can submit multiple forms, "Submit Another" should return them to a blank submission form.
+
+==================================================
+18. FRONTEND
+Use:
+
+HTML5
+
+CSS3
+
+Jinja2
+
+Do not use frontend JavaScript.
+
+HTML5 attributes such as:
+
+required
+accept
+maxlength
+inputmode
+
+may be used for better browser UX.
+
+However, all important validation MUST also happen on the FastAPI server.
+
+The application must remain functional with JavaScript disabled.
+
+==================================================
+19. MOBILE-FIRST UI
+The UI is primarily intended for mobile phone users.
+
+Make the application:
+
+Mobile-first
+
+Responsive
+
+Clean
+
+Professional
+
+Simple
+
+User-friendly
+
+Accessible
+
+Use plain CSS.
+
+Do not use a CSS framework.
+
+Input fields should be:
+
+Large enough for touch interaction.
+
+Clearly labelled.
+
+Comfortable to use on mobile.
+
+Properly spaced.
+
+Buttons should be large enough to tap comfortably.
+
+Avoid tiny fonts.
+
+Avoid unnecessarily complicated layouts.
+
+On desktop, center the content in a reasonable maximum-width container.
+
+On mobile, use almost the full screen width with sensible padding.
+
+==================================================
+20. LOGIN PAGE
+Create a clean login page.
+
+Suggested structure:
+
+Application Name
+
+Username
+[________________]
+
+Password
+[________________]
+
+[ Login ]
+
+Error message
+
+Do not provide:
+
+Signup
+
+Registration
+
+Forgot password
+
+Password reset
+
+==================================================
+21. SUBMISSION PAGE
+Suggested structure:
+
+Submit Details
+
+Consumer Number *
+[________________________]
+
+Consumer New Name *
+[________________________]
+
+Mobile Number *
+[________________________]
+
+Upload File *
+[ Choose File ]
+
+Allowed formats: PDF, JPG, JPEG
+Maximum file size: 10 MB
+
+[ Submit ]
+
+Logout
+
+Make the page visually clean and comfortable on mobile.
+
+==================================================
+22. SECURITY
+Implement basic production-level security even though this is a small personal-use application.
+
+Include:
+
+Password hashing
+
+HTTP-only session cookies
+
+Secure cookies in production
+
+SameSite cookies
+
+CSRF protection
+
+Server-side validation
+
+File size validation
+
+File type validation
+
+Private R2 bucket
+
+Environment-based secrets
+
+No credentials in source code
+
+No passwords in logs
+
+Generic authentication error messages
+
+Authentication required for submission
+
+Secure logout
+
+Session expiration
+
+UUID-based R2 object names
+
+Safe filename handling
+
+Protection against path traversal
+
+Database constraints
+
+Proper database transactions
+
+Do not over-engineer the security system.
+
+==================================================
+23. ENVIRONMENT VARIABLES
+Create a .env.example.
+
+Include configuration similar to:
+
+APP_ENV=development
+SECRET_KEY=change-me
+
+DATABASE_URL=postgresql+psycopg://...
+
+SESSION_MAX_AGE=3600
+
+R2_ENDPOINT_URL=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=
+
+Never commit the real .env file.
+
+Add .env to .gitignore.
+
+==================================================
+24. PROJECT STRUCTURE
+Use a clean lightweight project structure similar to:
+
+project/
+│
+├── app/
+│ ├── init.py
+│ ├── main.py
+│ ├── config.py
+│ ├── database.py
+│ ├── models.py
+│ ├── schemas.py
+│ ├── auth.py
+│ ├── sessions.py
+│ ├── csrf.py
+│ ├── storage.py
+│ ├── validators.py
+│ │
+│ ├── routes/
+│ │ ├── auth.py
+│ │ └── submissions.py
+│ │
+│ ├── templates/
+│ │ ├── base.html
+│ │ ├── login.html
+│ │ ├── form.html
+│ │ └── success.html
+│ │
+│ └── static/
+│ └── css/
+│ └── style.css
+│
+├── alembic/
+│
+├── tests/
+│
+├── scripts/
+│ ├── seed_users.py
+│ └── manage_user.py
+│
+├── alembic.ini
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── Dockerfile
+└── README.md
+
+The exact structure may be adjusted if there is a cleaner FastAPI convention, but keep the application easy to understand.
+
+Do not create unnecessary abstraction layers.
+
+==================================================
+25. DATABASE MIGRATIONS
+Use Alembic.
+
+The README should explain:
+
+alembic upgrade head
+
+Also document how future migrations should be created.
+
+The initial migration must create:
+
+users
+
+submissions
+
+with appropriate constraints and indexes.
+
+==================================================
+26. LOGGING
+Use Python's standard logging.
+
+Log useful operational information such as:
+
+Application startup
+
+Authentication failures
+
+Successful submissions
+
+R2 failures
+
+Database failures
+
+Do NOT log:
+
+Passwords
+
+Session secrets
+
+R2 secret keys
+
+Uploaded document contents
+
+Sensitive form data unnecessarily
+
+Keep logging minimal and useful.
+
+==================================================
+27. ERROR PAGES
+Provide friendly pages for:
+
+403
+
+404
+
+500
+
+Do not expose Python tracebacks in production.
+
+==================================================
+28. DEPLOYMENT
+Use the following deployment architecture:
+
+FastAPI application:
+Render
+
+PostgreSQL:
+Render PostgreSQL
+
+File storage:
+Cloudflare R2
+
+This application is expected to have fewer than approximately 500 submissions per month, so this architecture is intentionally simple.
+
+The README must explain:
+
+How to create the Cloudflare R2 bucket.
+
+How to create R2 API credentials.
+
+How to configure the R2 bucket as private.
+
+How to configure the R2 lifecycle rule for 10-day deletion.
+
+How to create/configure Render PostgreSQL.
+
+How to configure Render environment variables.
+
+How to run Alembic migrations.
+
+How to seed the initial 3 users.
+
+How to change usernames/passwords later.
+
+How to deploy the FastAPI application.
+
+The application must listen on the port provided by the hosting platform.
+
+Use an appropriate production start command, such as:
+
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+Adjust this if necessary for the selected Render configuration.
+
+==================================================
+29. CLOUDflare R2 LIFECYCLE
+Document how to configure the R2 lifecycle rule.
+
+Uploaded files will be stored under:
+
+uploads/
+
+The lifecycle policy should delete objects after 10 days.
+
+Do not implement application-level scheduled deletion unless there is a compelling reason.
+
+The R2 lifecycle system should handle automatic deletion.
+
+==================================================
+30. TESTING
+Create basic automated tests.
+
+Test authentication:
+
+Valid login
+
+Invalid login
+
+Unauthenticated access to /form
+
+Session expiration
+
+Logout
+
+Test form validation:
+
+Missing consumer number
+
+Missing consumer name
+
+Missing mobile number
+
+Invalid mobile number
+
+Missing file
+
+Invalid file type
+
+File larger than 10 MB
+
+Valid PDF
+
+Valid JPG
+
+Valid JPEG
+
+Test submission:
+
+Successful submission
+
+R2 upload failure
+
+Database failure
+
+Cleanup after partial failure
+
+Test authorization:
+
+Unauthenticated user cannot submit.
+
+Authenticated user can submit.
+
+Do not create an unnecessarily complicated test infrastructure.
+
+==================================================
+31. README
+Create a complete README containing:
+
+Project overview
+
+Features
+
+Architecture
+
+Technology stack
+
+Requirements
+
+Local development setup
+
+PostgreSQL setup
+
+Environment variables
+
+Alembic migrations
+
+User seeding
+
+Changing usernames/passwords
+
+Running locally
+
+R2 setup
+
+R2 lifecycle setup
+
+Render deployment
+
+Testing
+
+Troubleshooting
+
+Security notes
+
+All commands in the README should be copy-paste friendly.
+
+==================================================
+32. IMPORTANT ARCHITECTURE PRINCIPLES
+Keep the application intentionally simple.
+
+Expected traffic is fewer than approximately 500 submissions per month.
+
+Do not introduce unnecessary infrastructure.
+
+The architecture should essentially be:
+
+Browser
+|
+v
+FastAPI
+|
++---- PostgreSQL
+| |
+| +---- users
+| +---- submissions
+|
++---- Cloudflare R2
+|
++---- uploaded documents
+|
++---- automatic deletion after 10 days
+
+Authentication should be:
+
+Browser
+|
+v
+Login
+|
+v
+FastAPI
+|
+v
+PostgreSQL user verification
+|
+v
+Secure HTTP-only session
+|
+v
+Submission form
+
+==================================================
+33. COMPLETE EXPECTED USER FLOW
+The final implementation must support this complete flow:
+
+User opens website
+|
+v
+Login page
+|
+v
+Enter username + password
+|
+v
+FastAPI validates credentials
+|
+v
+Authenticated 1-hour session created
+|
+v
+Redirect to submission form
+|
+v
+Enter consumer number
+|
+v
+Enter consumer new name
+|
+v
+Enter Indian 10-digit mobile number
+|
+v
+Select PDF/JPG/JPEG
+|
+v
+Maximum 10 MB
+|
+v
+Submit
+|
+v
+FastAPI validates everything
+|
+v
+Upload document to private Cloudflare R2
+|
+v
+Store metadata in PostgreSQL
+|
+v
+Show "Submission Successful"
+|
+v
+User can submit another form
+|
+v
+Logout
+
+After 10 days:
+
+R2 automatically deletes the uploaded document.
+
+PostgreSQL submission metadata can remain.
+
+==================================================
+34. FINAL IMPLEMENTATION REQUIREMENT
+Build the actual complete application.
+
+Do not only describe how it could be built.
+
+Do not leave placeholder functions such as:
+
+TODO
+IMPLEMENT THIS
+YOUR CODE HERE
+
+unless there is a genuinely external value that must be supplied by the owner, such as:
+
+Database credentials
+
+R2 credentials
+
+Secret key
+
+Domain name
+
+For all application logic, provide complete working code.
+
+After generating the project, explain:
+
+What files were created.
+
+How to install dependencies.
+
+How to configure .env.
+
+How to create the PostgreSQL database.
+
+How to run Alembic migrations.
+
+How to seed the 3 users.
+
+How to run locally.
+
+How to change a username/password later.
+
+How to configure Cloudflare R2.
+
+How to configure the 10-day R2 lifecycle rule.
+
+How to deploy to Render.
+
+How to verify the complete application is working.
