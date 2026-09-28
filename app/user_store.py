@@ -1,12 +1,3 @@
-"""
-File-based user store. Users are kept in users.json at the project root.
-Format:
-[
-  {"username": "alice", "password_hash": "...", "is_active": true},
-  ...
-]
-Exactly 3 users are enforced by the seed/manage scripts.
-"""
 import json
 import os
 from typing import Optional
@@ -41,31 +32,17 @@ def count_users() -> int:
     return len(_load())
 
 
-def create_user(username: str, password_hash: str) -> None:
+def create_user(username: str, password_hash: str, is_admin: bool = False) -> None:
     users = _load()
-    if len(users) >= 3:
-        raise ValueError("3 users already exist.")
     if any(u["username"] == username for u in users):
         raise ValueError(f"Username '{username}' already exists.")
-    users.append({"username": username, "password_hash": password_hash, "is_active": True})
+    users.append({
+        "username": username,
+        "password_hash": password_hash,
+        "is_active": True,
+        "is_admin": is_admin,
+    })
     _save(users)
-
-
-def get_user_by_consumer_number(consumer_number: str) -> Optional[dict]:
-    for u in _load():
-        if u.get("consumer_number") == consumer_number:
-            return u
-    return None
-
-
-def update_user_consumer_number(username: str, consumer_number: str) -> None:
-    users = _load()
-    for u in users:
-        if u["username"] == username:
-            u["consumer_number"] = consumer_number
-            _save(users)
-            return
-    raise ValueError(f"User '{username}' not found.")
 
 
 def update_user(old_username: str, new_username: Optional[str], new_password_hash: Optional[str]) -> None:
@@ -82,3 +59,11 @@ def update_user(old_username: str, new_username: Optional[str], new_password_has
             _save(users)
             return
     raise ValueError(f"User '{old_username}' not found.")
+
+
+def delete_user(username: str) -> None:
+    users = _load()
+    new_users = [u for u in users if u["username"] != username]
+    if len(new_users) == len(users):
+        raise ValueError(f"User '{username}' not found.")
+    _save(new_users)

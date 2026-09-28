@@ -16,5 +16,11 @@
     "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$EvLlHIOazpPn8KpBCcIB1A$vgnjG2kZFATOhpt9AYoAT3bUzrMg4HznDmR1hydB/PU",
     "is_active": true,
     "is_admin": false
+  },
+  {
+    "username": "Shrinikka1",
+    "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$yFB1gvMd3LKiYaStx3s+8Q$GAwjJ9CNrcZ9bl/nirjFgEsmVOIDJNUXMDLljaSC8s4",
+    "is_active": true,
+    "is_admin": false
   }
 ]

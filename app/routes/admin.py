@@ -4,7 +4,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.sessions import get_current_username
-from app.user_store import get_user
+from app.user_store import get_user, get_all_users, create_user, update_user, delete_user
+from app.auth import hash_password
 from app.csrf import generate_csrf_token, validate_csrf
 from app.validators import validate_upload
 from app.storage import admin_upload_document, find_consumer_document
@@ -24,28 +25,37 @@ def _require_admin(request: Request) -> dict | None:
     return user
 
 
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_get(request: Request, response: Response):
-    user = _require_admin(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
+def _render(request, response, *, success=None, error=None, upload_values=None, user_success=None, user_error=None):
     csrf_token = generate_csrf_token(response)
     return templates.TemplateResponse(
         "admin.html",
         {
             "request": request,
             "csrf_token": csrf_token,
-            "success": None,
-            "error": None,
-            "target_username": "",
-            "consumer_number": "",
+            "success": success,
+            "error": error,
+            "upload_values": upload_values or {},
+            "user_success": user_success,
+            "user_error": user_error,
+            "users": get_all_users(),
         },
         headers=dict(response.headers),
     )
 
 
-@router.post("/admin", response_class=HTMLResponse)
-async def admin_post(
+@router.get("/admin", response_class=HTMLResponse)
+async def admin_get(request: Request, response: Response):
+    if not _require_admin(request):
+        return RedirectResponse("/login", status_code=302)
+    return _render(request, response)
+
+
+# ---------------------------------------------------------------------------
+# Document upload
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/upload", response_class=HTMLResponse)
+async def admin_upload(
     request: Request,
     response: Response,
     csrf_token: str = Form(...),
@@ -53,47 +63,29 @@ async def admin_post(
     consumer_number: str = Form(...),
     upload_doc: UploadFile = File(...),
 ):
-    user = _require_admin(request)
-    if not user:
+    if not _require_admin(request):
         return RedirectResponse("/login", status_code=302)
 
-    def re_render(error: str, success: str = None):
-        new_csrf = generate_csrf_token(response)
-        return templates.TemplateResponse(
-            "admin.html",
-            {
-                "request": request,
-                "csrf_token": new_csrf,
-                "success": success,
-                "error": error,
-                "target_username": target_username,
-                "consumer_number": consumer_number,
-            },
-            status_code=422 if error else 200,
-            headers=dict(response.headers),
-        )
+    upload_values = {"target_username": target_username, "consumer_number": consumer_number}
 
     if not validate_csrf(request, csrf_token):
-        return re_render("Invalid request. Please try again.")
+        return _render(request, response, error="Invalid request. Please try again.", upload_values=upload_values)
 
     target_username = target_username.strip()
-    if not target_username:
-        return re_render("Username is required.")
-
-    target_user = get_user(target_username)
-    if not target_user or not target_user.get("is_active"):
-        return re_render(f"User '{target_username}' does not exist or is inactive.")
-
     consumer_number = consumer_number.strip()
+
+    if not target_username:
+        return _render(request, response, error="Username is required.", upload_values=upload_values)
+    if not get_user(target_username) or not get_user(target_username).get("is_active"):
+        return _render(request, response, error=f"User '{target_username}' does not exist or is inactive.", upload_values=upload_values)
     if not consumer_number:
-        return re_render("Consumer Number is required.")
+        return _render(request, response, error="Consumer Number is required.", upload_values=upload_values)
 
     try:
         file_data, ext, original_filename = await validate_upload(upload_doc)
     except ValueError as exc:
-        return re_render(str(exc))
+        return _render(request, response, error=str(exc), upload_values=upload_values)
 
-    # Check if replacing an existing record for this username+consumer
     existing = find_consumer_document(consumer_number)
     replacing = existing is not None and existing.get("assigned_to") == target_username
 
@@ -104,16 +96,99 @@ async def admin_post(
             file_data=file_data,
             original_filename=original_filename,
             ext=ext,
-            uploaded_by=user["username"],
+            uploaded_by=get_current_username(request),
         )
-    except Exception:
-        logger.exception("Admin upload failed for consumer %s", consumer_number)
-        return re_render("Upload failed. Please check R2 configuration and try again.")
+    except Exception as exc:
+        logger.exception("Admin upload failed for consumer %s: %s", consumer_number, exc)
+        return _render(request, response, error=f"Upload failed: {exc}", upload_values=upload_values)
 
     msg = (
-        f"Document replaced for '{target_username}' / Consumer {consumer_number}. Download count reset to 0/3."
+        f"Document replaced for '{target_username}' / Consumer {consumer_number}. Downloads reset to 0/3."
         if replacing
         else f"Document uploaded for '{target_username}' / Consumer {consumer_number}."
     )
-    logger.info("Admin '%s' %s for user '%s', consumer %s", user["username"], "replaced" if replacing else "uploaded", target_username, consumer_number)
-    return re_render(error=None, success=msg)
+    return _render(request, response, success=msg)
+
+
+# ---------------------------------------------------------------------------
+# User management
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/user/add", response_class=HTMLResponse)
+async def admin_user_add(
+    request: Request,
+    response: Response,
+    csrf_token: str = Form(...),
+    new_username: str = Form(...),
+    new_password: str = Form(...),
+    new_is_admin: str = Form(""),
+):
+    if not _require_admin(request):
+        return RedirectResponse("/login", status_code=302)
+    if not validate_csrf(request, csrf_token):
+        return _render(request, response, user_error="Invalid request. Please try again.")
+
+    new_username = new_username.strip()
+    if not new_username or not new_password:
+        return _render(request, response, user_error="Username and password are required.")
+
+    try:
+        create_user(new_username, hash_password(new_password), is_admin=bool(new_is_admin))
+    except ValueError as exc:
+        return _render(request, response, user_error=str(exc))
+
+    return _render(request, response, user_success=f"User '{new_username}' created.")
+
+
+@router.post("/admin/user/edit", response_class=HTMLResponse)
+async def admin_user_edit(
+    request: Request,
+    response: Response,
+    csrf_token: str = Form(...),
+    edit_username: str = Form(...),
+    edit_new_username: str = Form(""),
+    edit_new_password: str = Form(""),
+):
+    if not _require_admin(request):
+        return RedirectResponse("/login", status_code=302)
+    if not validate_csrf(request, csrf_token):
+        return _render(request, response, user_error="Invalid request. Please try again.")
+
+    edit_username = edit_username.strip()
+    edit_new_username = edit_new_username.strip() or None
+    new_hash = hash_password(edit_new_password) if edit_new_password.strip() else None
+
+    if not edit_new_username and not new_hash:
+        return _render(request, response, user_error="Provide a new username or new password to update.")
+
+    try:
+        update_user(edit_username, edit_new_username, new_hash)
+    except ValueError as exc:
+        return _render(request, response, user_error=str(exc))
+
+    return _render(request, response, user_success=f"User '{edit_username}' updated.")
+
+
+@router.post("/admin/user/delete", response_class=HTMLResponse)
+async def admin_user_delete(
+    request: Request,
+    response: Response,
+    csrf_token: str = Form(...),
+    del_username: str = Form(...),
+):
+    admin = _require_admin(request)
+    if not admin:
+        return RedirectResponse("/login", status_code=302)
+    if not validate_csrf(request, csrf_token):
+        return _render(request, response, user_error="Invalid request. Please try again.")
+
+    del_username = del_username.strip()
+    if del_username == admin["username"]:
+        return _render(request, response, user_error="You cannot delete your own account.")
+
+    try:
+        delete_user(del_username)
+    except ValueError as exc:
+        return _render(request, response, user_error=str(exc))
+
+    return _render(request, response, user_success=f"User '{del_username}' deleted.")
