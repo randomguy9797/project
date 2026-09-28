@@ -20,8 +20,10 @@ async def root():
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_get(request: Request, response: Response):
-    if get_current_username(request):
-        return RedirectResponse("/form", status_code=302)
+    username = get_current_username(request)
+    if username:
+        u = get_user(username)
+        return RedirectResponse("/admin" if u and u.get("is_admin") else "/form", status_code=302)
     csrf_token = generate_csrf_token(response)
     return templates.TemplateResponse(
         "login.html",
@@ -58,16 +60,15 @@ async def login_post(
             headers=dict(response.headers),
         )
 
-    redirect = RedirectResponse("/form", status_code=302)
+    redirect_to = "/admin" if user.get("is_admin") else "/form"
+    redirect = RedirectResponse(redirect_to, status_code=302)
     create_session(redirect, user["username"])
     logger.info("User '%s' logged in successfully.", user["username"])
     return redirect
 
 
-@router.post("/logout")
-async def logout(request: Request, response: Response, csrf_token: str = Form(...)):
-    if not validate_csrf(request, csrf_token):
-        return RedirectResponse("/login", status_code=302)
+@router.get("/logout")
+async def logout(request: Request):
     redirect = RedirectResponse("/login", status_code=302)
     delete_session(request, redirect)
     return redirect

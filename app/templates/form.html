@@ -4,8 +4,33 @@
 <div class="card" style="max-width:640px;margin:0 auto;">
   <h1>Submit Details</h1>
 
+  {% if admin_docs %}
+  <div style="border:1.5px solid #bae6fd;border-radius:8px;padding:1rem;margin-bottom:1.5rem;background:#f0f9ff;">
+    <h2 style="margin:0 0 0.75rem;font-size:1.1rem;color:#0369a1;">Documents Available</h2>
+    {% for doc in admin_docs %}
+    <div style="margin-bottom:{% if not loop.last %}1rem{% else %}0{% endif %};padding-bottom:{% if not loop.last %}1rem{% else %}0{% endif %};{% if not loop.last %}border-bottom:1px solid #bae6fd;{% endif %}">
+      <div style="font-size:0.9rem;color:#374151;margin-bottom:0.5rem;">
+        <strong>{{ doc.original_filename }}</strong>
+        &nbsp;<span style="color:#6b7280;">(Consumer: {{ doc.consumer_number }})</span>
+      </div>
+      {% set used = doc.downloads %}
+      {% if used < max_downloads %}
+      <form method="post" action="/download" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="doc_key" value="{{ doc.document_key }}" />
+        <button type="submit" class="btn btn-primary" style="padding:0.5rem 1rem;font-size:0.9rem;">&#8595;&nbsp;Download Document</button>
+      </form>
+      &nbsp;<span style="font-size:0.85rem;color:{% if used >= max_downloads - 1 %}#d97706{% else %}#16a34a{% endif %};">Downloads: {{ used }}/{{ max_downloads }}</span>
+      {% else %}
+      <span style="color:#dc2626;font-weight:700;font-size:0.9rem;">Download limit reached ({{ max_downloads }}/{{ max_downloads }})</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div style="overflow:hidden;margin-bottom:1.25rem;">
-    <p style="color:#dc2626;font-weight:700;white-space:nowrap;display:inline-block;animation:marquee 18s linear infinite;">
+    <p style="color:#dc2626;font-weight:700;white-space:nowrap;display:inline-block;animation:marquee 40s linear infinite;">
       If Current Energy Bill/Security Deposit Arrears of Consumer &amp; PD Arrears Are Pending of Consumer Error Occurred........ No SERVICES CREATED BY DISCOM SITE
     </p>
   </div>
@@ -163,10 +188,7 @@
   </form>
 
   <div class="logout-section">
-    <form method="post" action="/logout">
-      <input type="hidden" name="csrf_token" value="{{ logout_csrf }}" />
-      <button type="submit" class="btn btn-secondary">Logout</button>
-    </form>
+    <a href="/logout" class="btn btn-secondary" style="display:block;text-align:center;">Logout</a>
   </div>
 </div>
 

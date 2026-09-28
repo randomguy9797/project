@@ -51,6 +51,23 @@ def create_user(username: str, password_hash: str) -> None:
     _save(users)
 
 
+def get_user_by_consumer_number(consumer_number: str) -> Optional[dict]:
+    for u in _load():
+        if u.get("consumer_number") == consumer_number:
+            return u
+    return None
+
+
+def update_user_consumer_number(username: str, consumer_number: str) -> None:
+    users = _load()
+    for u in users:
+        if u["username"] == username:
+            u["consumer_number"] = consumer_number
+            _save(users)
+            return
+    raise ValueError(f"User '{username}' not found.")
+
+
 def update_user(old_username: str, new_username: Optional[str], new_password_hash: Optional[str]) -> None:
     users = _load()
     if new_username and new_username != old_username:

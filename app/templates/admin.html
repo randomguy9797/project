@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Admin Upload — Consumer Portal{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px;margin:0 auto;">
+  <h1>Admin — Upload Document</h1>
+
+  {% if success %}
+  <div class="alert" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;margin-bottom:1.25rem;padding:0.85rem 1rem;border-radius:8px;font-size:0.95rem;">
+    {{ success }}
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/admin" enctype="multipart/form-data" id="admin-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    <div class="field">
+      <label for="target_username">Username <span class="required">*</span></label>
+      <input type="text" id="target_username" name="target_username"
+        value="{{ target_username }}" required
+        placeholder="e.g. vijaybore"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
+      <span class="hint">The user who will receive access to this document</span>
+    </div>
+
+    <div class="field">
+      <label for="consumer_number">Consumer Number <span class="required">*</span></label>
+      <input type="text" id="consumer_number" name="consumer_number"
+        value="{{ consumer_number }}" required
+        placeholder="e.g. 123456"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
+      <span class="hint">Document will be stored under <code>YYYY/MM/{consumer_number}/</code></span>
+    </div>
+
+    <div class="field">
+      <label for="upload_doc">Document <span class="required">*</span></label>
+      <input type="file" id="upload_doc" name="upload_doc"
+        accept=".pdf,.jpg,.jpeg" required data-max-mb="10" />
+      <span class="hint">Allowed: PDF, JPG, JPEG &nbsp;|&nbsp; Max: 10 MB</span>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Upload Document</button>
+  </form>
+
+  <div class="logout-section">
+    <a href="/logout" class="btn btn-secondary" style="display:block;text-align:center;">Logout</a>
+  </div>
+</div>
+
+<script>
+  document.getElementById('admin-form').addEventListener('submit', function(e) {
+    var inp = document.getElementById('upload_doc');
+    if (inp.files.length > 0 && inp.files[0].size > 10 * 1024 * 1024) {
+      e.preventDefault();
+      alert('File exceeds 10 MB. Please choose a smaller file.');
+      inp.focus();
+    }
+  });
+</script>
+{% endblock %}

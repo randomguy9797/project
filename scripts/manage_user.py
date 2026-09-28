@@ -10,7 +10,7 @@ import getpass
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.auth import hash_password
-from app.user_store import get_all_users, update_user
+from app.user_store import get_all_users, update_user, update_user_consumer_number
 
 
 def main():
@@ -22,7 +22,9 @@ def main():
     print("\nExisting users:")
     for idx, u in enumerate(users, 1):
         status = "active" if u.get("is_active") else "inactive"
-        print(f"  {idx}. {u['username']} ({status})")
+        consumer = u.get("consumer_number") or "(not set)"
+        admin_tag = " [admin]" if u.get("is_admin") else ""
+        print(f"  {idx}. {u['username']} ({status}){admin_tag} — Consumer#: {consumer}")
 
     print()
     raw = input("Select user (1, 2, or 3): ").strip()
@@ -36,11 +38,21 @@ def main():
     print("  1. Change username")
     print("  2. Change password")
     print("  3. Change both")
-    print("  4. Cancel")
+    print("  4. Set Consumer Number")
+    print("  5. Cancel")
 
     action = input("\nChoice: ").strip()
-    if action not in ("1", "2", "3"):
+    if action not in ("1", "2", "3", "4"):
         print("Cancelled.")
+        return
+
+    if action == "4":
+        cn = input("Consumer Number: ").strip()
+        try:
+            update_user_consumer_number(old_username, cn)
+            print(f"Consumer Number set to '{cn}' for {old_username}.")
+        except ValueError as e:
+            print(f"Error: {e}")
         return
 
     new_username = None
