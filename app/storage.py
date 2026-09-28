@@ -3,10 +3,8 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-
 from app.config import settings
 
 logger = logging.getLogger(__name__)
