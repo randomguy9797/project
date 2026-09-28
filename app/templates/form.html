@@ -1,66 +1,163 @@
 {% extends "base.html" %}
 {% block title %}Submit Details — Consumer Portal{% endblock %}
 {% block content %}
-<div class="card">
+<div class="card" style="max-width:640px;margin:0 auto;">
   <h1>Submit Details</h1>
+
+  <div style="overflow:hidden;margin-bottom:1.25rem;">
+    <p style="color:#dc2626;font-weight:700;white-space:nowrap;display:inline-block;animation:marquee 18s linear infinite;">
+      If Current Energy Bill/Security Deposit Arrears of Consumer &amp; PD Arrears Are Pending of Consumer Error Occurred........ No SERVICES CREATED BY DISCOM SITE
+    </p>
+  </div>
+  <style>
+    @keyframes marquee {
+      0%   { transform: translateX(100vw); }
+      100% { transform: translateX(-100%); }
+    }
+  </style>
 
   {% if error %}
   <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/form" enctype="multipart/form-data" novalidate>
+  <form method="post" action="/form" enctype="multipart/form-data" novalidate id="main-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
 
+    <!-- WSS Services -->
+    <div class="field">
+      <label for="wss_service">WSS Services <span class="required">*</span></label>
+      <select id="wss_service" name="wss_service" required style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
+        <option value="" disabled {% if not values.get('wss_service') %}selected{% endif %}>-- Select Service --</option>
+        {% for opt in ['New Connection','Change of Name','PD Request','Load Addition','Address Change','Tariff Change','SD Refund','Solar Load Expansion/Reduction'] %}
+        <option value="{{ opt }}" {% if values.get('wss_service') == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Consumer Number -->
     <div class="field">
       <label for="consumer_number">Consumer Number <span class="required">*</span></label>
-      <input
-        type="text"
-        id="consumer_number"
-        name="consumer_number"
-        value="{{ values.get('consumer_number', '') }}"
-        required
-        maxlength="255"
-      />
+      <input type="number" id="consumer_number" name="consumer_number"
+        value="{{ values.get('consumer_number', '') }}" required />
     </div>
 
+    <!-- Consumer Name -->
     <div class="field">
-      <label for="consumer_new_name">Consumer New Name <span class="required">*</span></label>
-      <input
-        type="text"
-        id="consumer_new_name"
-        name="consumer_new_name"
-        value="{{ values.get('consumer_new_name', '') }}"
-        required
-        maxlength="255"
-      />
+      <label>Consumer Name <span class="required">*</span></label>
+      <div style="display:flex;gap:0.5rem;">
+        <input type="text" name="consumer_first_name" placeholder="First Name"
+          value="{{ values.get('consumer_first_name', '') }}" required style="flex:1;" />
+        <input type="text" name="consumer_second_name" placeholder="Second Name"
+          value="{{ values.get('consumer_second_name', '') }}" style="flex:1;" />
+        <input type="text" name="consumer_last_name" placeholder="Last Name"
+          value="{{ values.get('consumer_last_name', '') }}" required style="flex:1;" />
+      </div>
     </div>
 
+    <!-- Application ID -->
     <div class="field">
-      <label for="mobile_number">Mobile Number <span class="required">*</span></label>
-      <input
-        type="tel"
-        id="mobile_number"
-        name="mobile_number"
+      <label for="application_id">Application ID</label>
+      <input type="number" id="application_id" name="application_id"
+        value="{{ values.get('application_id', '') }}" />
+    </div>
+
+    <!-- Consumer New Name -->
+    <div class="field">
+      <label>Consumer New Name</label>
+      <div style="display:flex;gap:0.5rem;">
+        <input type="text" name="new_first_name" placeholder="First Name"
+          value="{{ values.get('new_first_name', '') }}" style="flex:1;" />
+        <input type="text" name="new_second_name" placeholder="Second Name"
+          value="{{ values.get('new_second_name', '') }}" style="flex:1;" />
+        <input type="text" name="new_last_name" placeholder="Last Name"
+          value="{{ values.get('new_last_name', '') }}" style="flex:1;" />
+      </div>
+    </div>
+
+    <!-- Email -->
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email"
+        value="{{ values.get('email', '') }}"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
+    </div>
+
+    <!-- Phone Number -->
+    <div class="field">
+      <label for="mobile_number">Phone Number (Aadhar Linked)</label>
+      <input type="tel" id="mobile_number" name="mobile_number"
         value="{{ values.get('mobile_number', '') }}"
-        required
-        maxlength="10"
-        inputmode="numeric"
-        pattern="[6-9][0-9]{9}"
-      />
+        maxlength="10" inputmode="numeric" pattern="[6-9][0-9]{9}" />
       <span class="hint">10-digit Indian mobile number (starts with 6, 7, 8, or 9)</span>
     </div>
 
+    <!-- Reason for Name Change -->
     <div class="field">
-      <label for="upload_file">Upload File <span class="required">*</span></label>
-      <input
-        type="file"
-        id="upload_file"
-        name="upload_file"
-        required
-        accept=".pdf,.jpg,.jpeg"
-      />
-      <span class="hint">Allowed formats: PDF, JPG, JPEG &nbsp;|&nbsp; Maximum file size: 10 MB</span>
+      <label for="reason_name_change">Reason for Name Change</label>
+      <select id="reason_name_change" name="reason_name_change"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
+        <option value="" {% if not values.get('reason_name_change') %}selected{% endif %}>-- Select Reason --</option>
+        <option value="Correction in Spelling" {% if values.get('reason_name_change') == 'Correction in Spelling' %}selected{% endif %}>Correction in Spelling</option>
+        <option value="Change in Ownership" {% if values.get('reason_name_change') == 'Change in Ownership' %}selected{% endif %}>Change in Ownership</option>
+      </select>
     </div>
+
+    <!-- Category -->
+    <div class="field">
+      <label for="category">Category</label>
+      <select id="category" name="category"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
+        <option value="" {% if not values.get('category') %}selected{% endif %}>-- Select Category --</option>
+        {% for opt in ['Residential','Commercial','Industrial','Other'] %}
+        <option value="{{ opt }}" {% if values.get('category') == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Address -->
+    <div class="field">
+      <label for="address">Address</label>
+      <textarea id="address" name="address" rows="3"
+        style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;resize:vertical;">{{ values.get('address', '') }}</textarea>
+    </div>
+
+    <!-- Bank Details -->
+    <fieldset style="border:1.5px solid #d1d5db;border-radius:8px;padding:1rem;margin-bottom:1.25rem;">
+      <legend style="font-weight:600;padding:0 0.5rem;color:#333;">Bank Details (For SD Refund)</legend>
+      <div class="field" style="margin-bottom:1rem;">
+        <label for="account_number">Account Number</label>
+        <input type="number" id="account_number" name="account_number"
+          value="{{ values.get('account_number', '') }}" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label for="ifsc_code">IFSC Code</label>
+        <input type="text" id="ifsc_code" name="ifsc_code"
+          value="{{ values.get('ifsc_code', '') }}" maxlength="11" style="text-transform:uppercase;" />
+      </div>
+    </fieldset>
+
+    <!-- Document Uploads -->
+    <fieldset style="border:1.5px solid #d1d5db;border-radius:8px;padding:1rem;margin-bottom:1.25rem;">
+      <legend style="font-weight:600;padding:0 0.5rem;color:#333;">Document Uploads</legend>
+      <span class="hint" style="display:block;margin-bottom:0.75rem;">Allowed: PDF, JPG, JPEG &nbsp;|&nbsp; Max size: 10 MB each</span>
+
+      {% set uploads = [
+        ('upload_aadhar',    'Upload Aadhar',            True),
+        ('upload_pan',       'Upload PAN Card',           True),
+        ('upload_ownership', 'Upload Ownership Document', True),
+        ('upload_bond',      'Upload Bond',               False),
+        ('upload_energy_bill','Upload Energy Bill',       False),
+        ('upload_other',     'Upload Other Documents',    False),
+      ] %}
+      {% for field_name, field_label, is_required in uploads %}
+      <div class="field">
+        <label for="{{ field_name }}">{{ field_label }}{% if is_required %} <span class="required">*</span>{% endif %}</label>
+        <input type="file" id="{{ field_name }}" name="{{ field_name }}"
+          accept=".pdf,.jpg,.jpeg" {% if is_required %}required{% endif %}
+          data-max-mb="10" />
+      </div>
+      {% endfor %}
+    </fieldset>
 
     <button type="submit" class="btn btn-primary">Submit</button>
   </form>
@@ -72,4 +169,20 @@
     </form>
   </div>
 </div>
+
+<script>
+  document.getElementById('main-form').addEventListener('submit', function(e) {
+    var inputs = this.querySelectorAll('input[type="file"][data-max-mb]');
+    for (var i = 0; i < inputs.length; i++) {
+      var inp = inputs[i];
+      var maxBytes = parseFloat(inp.dataset.maxMb) * 1024 * 1024;
+      if (inp.files.length > 0 && inp.files[0].size > maxBytes) {
+        e.preventDefault();
+        alert('"' + inp.previousElementSibling.textContent.trim() + '" exceeds 10 MB. Please choose a smaller file.');
+        inp.focus();
+        return;
+      }
+    }
+  });
+</script>
 {% endblock %}

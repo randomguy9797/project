@@ -42,17 +42,45 @@ async def form_get(request: Request, response: Response):
 async def form_post(
     request: Request,
     response: Response,
-    consumer_number: str = Form(...),
-    consumer_new_name: str = Form(...),
-    mobile_number: str = Form(...),
     csrf_token: str = Form(...),
-    upload_file_field: UploadFile = File(..., alias="upload_file"),
+    wss_service: str = Form(...),
+    consumer_number: str = Form(...),
+    consumer_first_name: str = Form(...),
+    consumer_second_name: str = Form(""),
+    consumer_last_name: str = Form(...),
+    application_id: str = Form(""),
+    new_first_name: str = Form(""),
+    new_second_name: str = Form(""),
+    new_last_name: str = Form(""),
+    email: str = Form(""),
+    mobile_number: str = Form(""),
+    reason_name_change: str = Form(""),
+    category: str = Form(""),
+    address: str = Form(""),
+    account_number: str = Form(""),
+    ifsc_code: str = Form(""),
+    upload_aadhar: UploadFile = File(...),
+    upload_pan: UploadFile = File(...),
+    upload_ownership: UploadFile = File(...),
+    upload_bond: UploadFile = File(None),
+    upload_energy_bill: UploadFile = File(None),
+    upload_other: UploadFile = File(None),
 ):
     user = _require_user(request)
     if not user:
         return RedirectResponse("/login", status_code=302)
 
-    def re_render(error: str, values: dict):
+    values = {
+        "wss_service": wss_service, "consumer_number": consumer_number,
+        "consumer_first_name": consumer_first_name, "consumer_second_name": consumer_second_name,
+        "consumer_last_name": consumer_last_name, "application_id": application_id,
+        "new_first_name": new_first_name, "new_second_name": new_second_name,
+        "new_last_name": new_last_name, "email": email, "mobile_number": mobile_number,
+        "reason_name_change": reason_name_change, "category": category,
+        "address": address, "account_number": account_number, "ifsc_code": ifsc_code,
+    }
+
+    def re_render(error: str):
         new_csrf = generate_csrf_token(response)
         logout_csrf = generate_csrf_token(response)
         return templates.TemplateResponse(
@@ -62,58 +90,88 @@ async def form_post(
             headers=dict(response.headers),
         )
 
-    values = {
-        "consumer_number": consumer_number,
-        "consumer_new_name": consumer_new_name,
-        "mobile_number": mobile_number,
-    }
-
     if not validate_csrf(request, csrf_token):
-        return re_render("Invalid request. Please try again.", values)
+        return re_render("Invalid request. Please try again.")
+    if not wss_service.strip():
+        return re_render("WSS Service is required.")
+    if not consumer_number.strip():
+        return re_render("Consumer Number is required.")
+    if not consumer_first_name.strip() or not consumer_last_name.strip():
+        return re_render("Consumer First Name and Last Name are required.")
+    if mobile_number.strip() and not validate_mobile(mobile_number.strip()):
+        return re_render("Phone Number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.")
 
-    consumer_number = consumer_number.strip()
-    consumer_new_name = consumer_new_name.strip()
-    mobile_number = mobile_number.strip()
+    uploaded_keys = []
+    mandatory_uploads = [
+        (upload_aadhar, "Aadhar"),
+        (upload_pan, "PAN Card"),
+        (upload_ownership, "Ownership Document"),
+    ]
+    optional_uploads = [
+        (upload_bond, "Bond"),
+        (upload_energy_bill, "Energy Bill"),
+        (upload_other, "Other Documents"),
+    ]
 
-    if not consumer_number:
-        return re_render("Consumer Number is required.", values)
-    if not consumer_new_name:
-        return re_render("Consumer New Name is required.", values)
-    if not mobile_number:
-        return re_render("Mobile Number is required.", values)
-    if not validate_mobile(mobile_number):
-        return re_render("Mobile Number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.", values)
+    async def process_upload(uf, label):
+        try:
+            file_data, ext, original_filename = await validate_upload(uf)
+        except ValueError as exc:
+            raise ValueError(f"{label}: {exc}") from exc
+        key = generate_object_key(ext)
+        ct = CONTENT_TYPES.get(ext, "application/octet-stream")
+        upload_file(file_data, key, ct)
+        return key, original_filename, len(file_data)
 
     try:
-        file_data, ext, original_filename = await validate_upload(upload_file_field)
+        for uf, label in mandatory_uploads:
+            key, fname, size = await process_upload(uf, label)
+            uploaded_keys.append((key, fname, size, label))
+        for uf, label in optional_uploads:
+            if uf and uf.filename:
+                key, fname, size = await process_upload(uf, label)
+                uploaded_keys.append((key, fname, size, label))
     except ValueError as exc:
-        return re_render(str(exc), values)
-
-    object_key = generate_object_key(ext)
-    content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
-
-    try:
-        upload_file(file_data, object_key, content_type)
+        for key, _, _, _ in uploaded_keys:
+            try:
+                delete_file(key)
+            except Exception:
+                pass
+        return re_render(str(exc))
     except Exception:
-        return re_render("We couldn't submit your form. Please try again.", values)
+        for key, _, _, _ in uploaded_keys:
+            try:
+                delete_file(key)
+            except Exception:
+                pass
+        return re_render("We couldn't submit your form. Please try again.")
 
     submitted_at = datetime.now(timezone.utc).isoformat()
+    primary_key = uploaded_keys[0][0] if uploaded_keys else ""
 
     upload_metadata(
         {
+            "wss_service": wss_service,
             "consumer_number": consumer_number,
-            "consumer_new_name": consumer_new_name,
+            "consumer_name": f"{consumer_first_name} {consumer_second_name} {consumer_last_name}".strip(),
+            "application_id": application_id,
+            "consumer_new_name": f"{new_first_name} {new_second_name} {new_last_name}".strip(),
+            "email": email,
             "mobile_number": mobile_number,
-            "original_filename": original_filename,
-            "file_size_bytes": len(file_data),
+            "reason_name_change": reason_name_change,
+            "category": category,
+            "address": address,
+            "account_number": account_number,
+            "ifsc_code": ifsc_code,
+            "uploaded_files": [{"label": lbl, "key": k, "filename": fn, "size": sz} for k, fn, sz, lbl in uploaded_keys],
             "submitted_by": user["username"],
             "submitted_at": submitted_at,
-            "r2_object_key": object_key,
+            "r2_object_key": primary_key,
         },
-        object_key,
+        primary_key,
     )
 
-    logger.info("Submission by '%s' uploaded to R2: %s", user["username"], object_key)
+    logger.info("Submission by '%s', primary R2 key: %s", user["username"], primary_key)
 
     new_csrf = generate_csrf_token(response)
     return templates.TemplateResponse(
