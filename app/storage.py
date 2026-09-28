@@ -210,10 +210,13 @@ def attempt_download_by_username(
             if record.get("downloads", 0) >= MAX_DOWNLOADS:
                 return None, dict(record), f"Download limit reached ({MAX_DOWNLOADS}/{MAX_DOWNLOADS})."
 
-            file_bytes = _get_object_bytes(doc_key)
-            if file_bytes is None:
-                return None, dict(record), "Document file not found in storage."
+        # Fetch from R2 outside the JSON lock — network call must not hold the lock
+        file_bytes = _get_object_bytes(doc_key)
+        if file_bytes is None:
+            return None, dict(record), "Document file not found in storage."
 
+        with _admin_docs_lock:
+            docs = _load_admin_docs()
             for d in docs:
                 if d.get("assigned_to") == username and d.get("document_key") == doc_key:
                     d["downloads"] += 1
