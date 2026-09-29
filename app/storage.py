@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timezone
 import boto3
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _ADMIN_DOCS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin_docs.json")
 _admin_docs_lock = threading.Lock()
+USERS_OBJECT_KEY = "login/users.json"
 
 
 def _load_admin_docs() -> list[dict]:
@@ -60,8 +62,26 @@ def _doc_lock(doc_key: str) -> threading.Lock:
 
 
 def _current_ym() -> tuple[int, int]:
+    """Use one server-side clock for every date-based R2 key."""
     now = datetime.now(timezone.utc)
     return now.year, now.month
+
+
+def current_year_month() -> tuple[int, int]:
+    """Expose the server date so one submission uses one date-based folder."""
+    return _current_ym()
+
+
+def _safe_path_component(value: str) -> str:
+    return value.strip().replace("/", "-").replace("\\", "-")
+
+
+def _safe_download_filename(filename: str, consumer_number: str, ext: str) -> str:
+    """Keep admin downloads in one flat per-user folder without path traversal."""
+    filename = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "document"
+    return f"{_safe_path_component(consumer_number)}_{safe_stem}.{ext}"
 
 
 # ---------------------------------------------------------------------------
@@ -104,17 +124,24 @@ def _delete_object(key: str) -> None:
         logger.warning("R2 delete failed %s: %s", key, exc)
 
 
-def _list_prefix(prefix: str) -> list[str]:
-    client = _get_client()
-    keys = []
+def get_json_object(key: str) -> object | None:
+    """Read a JSON document from R2, returning None only when it does not exist."""
+    body = _get_object_bytes(key)
+    if body is None:
+        return None
     try:
-        paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=settings.R2_BUCKET_NAME, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                keys.append(obj["Key"])
-    except (BotoCoreError, ClientError) as exc:
-        logger.error("R2 list failed prefix=%s: %s", prefix, exc)
-    return keys
+        return json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.error("Invalid JSON in R2 object %s: %s", key, exc)
+        raise RuntimeError(f"Invalid JSON in R2 object '{key}'.") from exc
+
+
+def put_json_object(key: str, value: object) -> None:
+    _put_object(
+        key,
+        json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +157,9 @@ def admin_upload_document(
     uploaded_by: str,
 ) -> dict:
     year, month = _current_ym()
-    prefix = f"{year}/{month:02d}/{consumer_number}/"
-    doc_key = f"{prefix}document.{ext}"
+    prefix = f"{year}/{month:02d}/{_safe_path_component(target_username)}/download/"
+    doc_key = f"{prefix}{_safe_download_filename(original_filename, consumer_number, ext)}"
     content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
-
-    for k in _list_prefix(prefix):
-        _delete_object(k)
 
     _put_object(doc_key, file_data, content_type)
 
@@ -153,13 +177,18 @@ def admin_upload_document(
 
     with _admin_docs_lock:
         docs = _load_admin_docs()
+        previous_key = None
         for i, d in enumerate(docs):
             if d["assigned_to"] == target_username and d["consumer_number"] == consumer_number:
+                previous_key = d.get("document_key")
                 docs[i] = record
                 break
         else:
             docs.append(record)
         _save_admin_docs(docs)
+
+    if previous_key and previous_key != doc_key:
+        _delete_object(previous_key)
 
     logger.info(
         "Admin '%s' uploaded for consumer %s → %s (assigned to '%s')",
@@ -230,25 +259,42 @@ def attempt_download_by_username(
 # Helpers used by the submissions route
 # ---------------------------------------------------------------------------
 
-def generate_object_key(ext: str, consumer_number: str, doc_type: str) -> str:
-    safe_num = consumer_number.strip().replace("/", "-")
-    return f"uploads/{safe_num}_{doc_type}.{ext}"
+def generate_object_key(
+    ext: str,
+    consumer_number: str,
+    doc_type: str,
+    username: str,
+    year: int | None = None,
+    month: int | None = None,
+) -> str:
+    """Build a consumer document key within that consumer's date/user folder."""
+    if year is None or month is None:
+        year, month = _current_ym()
+    safe_num = _safe_path_component(consumer_number)
+    safe_user = _safe_path_component(username)
+    return f"{year}/{month:02d}/{safe_user}/{safe_num}/{safe_num}_{doc_type}.{ext}"
+
+
+def generate_metadata_key(
+    consumer_number: str,
+    username: str,
+    year: int | None = None,
+    month: int | None = None,
+) -> str:
+    if year is None or month is None:
+        year, month = _current_ym()
+    safe_num = _safe_path_component(consumer_number)
+    safe_user = _safe_path_component(username)
+    return f"{year}/{month:02d}/{safe_user}/{safe_num}/{safe_num}.json"
 
 
 def upload_file(data: bytes, object_key: str, content_type: str) -> None:
     _put_object(object_key, data, content_type)
 
 
-def upload_metadata(meta: dict, base_key: str) -> None:
-    meta_key = base_key.rsplit(".", 1)[0] + ".json"
-    try:
-        _put_object(
-            meta_key,
-            json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
-            "application/json",
-        )
-    except Exception:
-        pass
+def upload_metadata(meta: dict, object_key: str) -> None:
+    """Upload submission JSON and propagate failures to the submission transaction."""
+    put_json_object(object_key, meta)
 
 
 def delete_file(object_key: str) -> None:

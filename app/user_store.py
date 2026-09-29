@@ -1,20 +1,19 @@
-import json
-import os
 from typing import Optional
 
-USERS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "users.json")
+from app.storage import USERS_OBJECT_KEY, get_json_object, put_json_object
 
 
 def _load() -> list[dict]:
-    if not os.path.exists(USERS_FILE):
+    users = get_json_object(USERS_OBJECT_KEY)
+    if users is None:
         return []
-    with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if not isinstance(users, list) or not all(isinstance(user, dict) for user in users):
+        raise RuntimeError("Authentication users data in R2 has an invalid structure.")
+    return users
 
 
 def _save(users: list[dict]) -> None:
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=2)
+    put_json_object(USERS_OBJECT_KEY, users)
 
 
 def get_all_users() -> list[dict]:
@@ -67,3 +66,14 @@ def delete_user(username: str) -> None:
     if len(new_users) == len(users):
         raise ValueError(f"User '{username}' not found.")
     _save(new_users)
+
+
+def update_user_consumer_number(username: str, consumer_number: str) -> None:
+    """Retain the existing management-script operation in the R2 user store."""
+    users = _load()
+    for user in users:
+        if user["username"] == username:
+            user["consumer_number"] = consumer_number
+            _save(users)
+            return
+    raise ValueError(f"User '{username}' not found.")

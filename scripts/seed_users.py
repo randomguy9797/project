@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed the initial 3 users into users.json.
+Seed the initial 3 users into R2 at login/users.json.
 Run: python scripts/seed_users.py
 """
 import sys

@@ -9,7 +9,7 @@ from app.sessions import get_current_username
 from app.csrf import generate_csrf_token, validate_csrf
 from app.validators import validate_mobile, validate_upload
 from app.storage import (
-    upload_file, upload_metadata, delete_file, generate_object_key, CONTENT_TYPES,
+    current_year_month, upload_file, upload_metadata, delete_file, generate_object_key, generate_metadata_key, CONTENT_TYPES,
     find_documents_for_user, attempt_download_by_username, MAX_DOWNLOADS,
 )
 
@@ -96,8 +96,8 @@ async def form_post(
         "address": address, "account_number": account_number, "ifsc_code": ifsc_code,
     }
 
-    def err(msg):
-        return _form_context(request, response, user["username"], error=msg, values=values, status=422)
+    def err(msg, status=422):
+        return _form_context(request, response, user["username"], error=msg, values=values, status=status)
 
     if not validate_csrf(request, csrf_token):
         return err("Invalid request. Please try again.")
@@ -110,6 +110,9 @@ async def form_post(
     if mobile_number.strip() and not validate_mobile(mobile_number.strip()):
         return err("Phone Number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.")
 
+    username = user["username"]
+    normalized_consumer_number = consumer_number.strip()
+    submission_year, submission_month = current_year_month()
     uploaded_keys = []
 
     async def process_upload(uf, label, doc_type_slug):
@@ -117,7 +120,9 @@ async def form_post(
             file_data, ext, original_filename = await validate_upload(uf)
         except ValueError as exc:
             raise ValueError(f"{label}: {exc}") from exc
-        key = generate_object_key(ext, consumer_number.strip(), doc_type_slug)
+        key = generate_object_key(
+            ext, normalized_consumer_number, doc_type_slug, username, submission_year, submission_month
+        )
         upload_file(file_data, key, CONTENT_TYPES.get(ext, "application/octet-stream"))
         return key, original_filename, len(file_data)
 
@@ -125,7 +130,7 @@ async def form_post(
         for uf, label, slug in [
             (upload_aadhar,    "Aadhar",             "aadhar"),
             (upload_pan,       "PAN Card",           "pan"),
-            (upload_ownership, "Ownership Document", "ownership_document"),
+            (upload_ownership, "Ownership Document", "ownership"),
         ]:
             key, fname, size = await process_upload(uf, label, slug)
             uploaded_keys.append((key, fname, size, label))
@@ -137,39 +142,50 @@ async def form_post(
             if uf and uf.filename:
                 key, fname, size = await process_upload(uf, label, slug)
                 uploaded_keys.append((key, fname, size, label))
-    except (ValueError, Exception) as exc:
+    except ValueError as exc:
         for key, _, _, _ in uploaded_keys:
             try:
                 delete_file(key)
             except Exception:
                 pass
-        msg = str(exc) if isinstance(exc, ValueError) else "We couldn't submit your form. Please try again."
-        return err(msg)
+        return err(str(exc))
+    except Exception:
+        logger.exception("Consumer document upload failed for '%s' / %s", username, normalized_consumer_number)
+        for key, _, _, _ in uploaded_keys:
+            delete_file(key)
+        return err("We couldn't submit your form. Please try again.", status=503)
 
-    primary_key = uploaded_keys[0][0] if uploaded_keys else ""
-    upload_metadata(
-        {
-            "wss_service": wss_service,
-            "consumer_number": consumer_number,
-            "consumer_name": f"{consumer_first_name} {consumer_second_name} {consumer_last_name}".strip(),
-            "application_id": application_id,
-            "consumer_new_name": f"{new_first_name} {new_second_name} {new_last_name}".strip(),
-            "email": email,
-            "mobile_number": mobile_number,
-            "reason_name_change": reason_name_change,
-            "category": category,
-            "address": address,
-            "account_number": account_number,
-            "ifsc_code": ifsc_code,
-            "uploaded_files": [{"label": lbl, "key": k, "filename": fn, "size": sz} for k, fn, sz, lbl in uploaded_keys],
-            "submitted_by": user["username"],
-            "submitted_at": datetime.now(timezone.utc).isoformat(),
-            "r2_object_key": primary_key,
-        },
-        primary_key,
+    metadata_key = generate_metadata_key(
+        normalized_consumer_number, username, submission_year, submission_month
     )
+    metadata = {
+        "wss_service": wss_service,
+        "consumer_number": consumer_number,
+        "consumer_name": f"{consumer_first_name} {consumer_second_name} {consumer_last_name}".strip(),
+        "application_id": application_id,
+        "consumer_new_name": f"{new_first_name} {new_second_name} {new_last_name}".strip(),
+        "email": email,
+        "mobile_number": mobile_number,
+        "reason_name_change": reason_name_change,
+        "category": category,
+        "address": address,
+        "account_number": account_number,
+        "ifsc_code": ifsc_code,
+        "uploaded_files": [{"label": lbl, "key": k, "filename": fn, "size": sz} for k, fn, sz, lbl in uploaded_keys],
+        "submitted_by": username,
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "r2_object_key": metadata_key,
+    }
+    try:
+        upload_metadata(metadata, metadata_key)
+    except Exception:
+        logger.exception("Submission metadata upload failed for '%s' / %s", username, normalized_consumer_number)
+        for key, _, _, _ in uploaded_keys:
+            delete_file(key)
+        delete_file(metadata_key)
+        return err("We couldn't submit your form. Please try again.", status=503)
 
-    logger.info("Submission by '%s', primary R2 key: %s", user["username"], primary_key)
+    logger.info("Submission by '%s', metadata R2 key: %s", username, metadata_key)
     return templates.TemplateResponse(
         "success.html",
         {"request": request, "csrf_token": generate_csrf_token(response)},
