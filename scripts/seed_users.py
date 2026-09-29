@@ -19,7 +19,7 @@ def main():
         print("3 users already exist. Use scripts/manage_user.py to change them.")
         return
 
-    print("Creating 3 users.\n")
+    print("Creating 3 users. The first user will be an admin.\n")
     needed = 3 - existing
 
     for i in range(existing + 1, existing + needed + 1):
@@ -44,8 +44,10 @@ def main():
                 continue
             break
 
-        create_user(username, hash_password(password))
-        print(f"User {i} created.\n")
+        is_admin = i == 1
+        create_user(username, hash_password(password), is_admin=is_admin)
+        role = "admin" if is_admin else "standard user"
+        print(f"User {i} created as {role}.\n")
 
     print("All 3 users created successfully.")
 

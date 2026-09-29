@@ -205,7 +205,13 @@ def admin_upload_document(
 def find_documents_for_user(username: str) -> list[dict]:
     with _admin_docs_lock:
         docs = _load_admin_docs()
-    return [d for d in docs if d.get("assigned_to") == username]
+    return [
+        doc
+        for doc in docs
+        if doc.get("assigned_to") == username
+        and doc.get("available", True)
+        and doc.get("downloads", 0) < MAX_DOWNLOADS
+    ]
 
 
 def find_consumer_document(consumer_number: str) -> dict | None:
