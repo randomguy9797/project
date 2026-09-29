@@ -36,7 +36,7 @@ def _save_admin_docs(docs: list[dict]) -> None:
 _doc_locks: dict[str, threading.Lock] = {}
 _locks_mutex = threading.Lock()
 
-MAX_DOWNLOADS = 3
+MAX_DOWNLOADS = 2
 
 CONTENT_TYPES = {
     "pdf": "application/pdf",
