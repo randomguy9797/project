@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 import threading
 from datetime import datetime, timezone
@@ -11,24 +10,26 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Local JSON store for admin-assigned document access
+# R2 JSON store for admin-assigned document access. The document itself remains
+# in the recipient's date-based download folder.
 # ---------------------------------------------------------------------------
 
-_ADMIN_DOCS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "admin_docs.json")
 _admin_docs_lock = threading.Lock()
 USERS_OBJECT_KEY = "login/users.json"
+ADMIN_DOCS_OBJECT_KEY = "admin_docs.json"
 
 
 def _load_admin_docs() -> list[dict]:
-    if not os.path.exists(_ADMIN_DOCS_FILE):
+    docs = get_json_object(ADMIN_DOCS_OBJECT_KEY)
+    if docs is None:
         return []
-    with open(_ADMIN_DOCS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if not isinstance(docs, list) or not all(isinstance(doc, dict) for doc in docs):
+        raise RuntimeError("Admin document data in R2 has an invalid structure.")
+    return docs
 
 
 def _save_admin_docs(docs: list[dict]) -> None:
-    with open(_ADMIN_DOCS_FILE, "w", encoding="utf-8") as f:
-        json.dump(docs, f, indent=2, ensure_ascii=False)
+    put_json_object(ADMIN_DOCS_OBJECT_KEY, docs)
 
 
 # Per-doc-key lock to prevent concurrent download-count races
