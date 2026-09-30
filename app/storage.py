@@ -306,3 +306,132 @@ def upload_metadata(meta: dict, object_key: str) -> None:
 
 def delete_file(object_key: str) -> None:
     _delete_object(object_key)
+
+
+# ---------------------------------------------------------------------------
+# Admin: consumer data discovery from R2 structure
+# {year}/{month}/{username}/{consumer_number}/{consumer_number}.json
+# ---------------------------------------------------------------------------
+
+_VALID_CONSUMER_DOC_RE = re.compile(
+    r"^\d{4}/\d{2}/[^/]+/[^/]+/[^/]+\.(pdf|jpg|jpeg)$",
+    re.IGNORECASE,
+)
+
+
+def _list_prefixes(prefix: str) -> list[str]:
+    """Return immediate sub-folder prefixes under a given prefix."""
+    client = _get_client()
+    prefixes = []
+    kwargs: dict = {"Bucket": settings.R2_BUCKET_NAME, "Prefix": prefix, "Delimiter": "/"}
+    while True:
+        resp = client.list_objects_v2(**kwargs)
+        for cp in resp.get("CommonPrefixes", []):
+            prefixes.append(cp["Prefix"])
+        if resp.get("IsTruncated"):
+            kwargs["ContinuationToken"] = resp["NextContinuationToken"]
+        else:
+            break
+    return prefixes
+
+
+def _key_exists(key: str) -> bool:
+    """Return True if the exact key exists in the bucket."""
+    client = _get_client()
+    resp = client.list_objects_v2(
+        Bucket=settings.R2_BUCKET_NAME, Prefix=key, MaxKeys=1
+    )
+    return any(obj["Key"] == key for obj in resp.get("Contents", []))
+
+
+def list_consumer_users() -> list[dict]:
+    """
+    Discover all usernames and unique consumer counts from R2.
+    Walks: {year}/{month}/{username}/{consumer_number}/{consumer_number}.json
+    Returns: [{"username": str, "consumer_count": int}, ...]
+    """
+    user_consumers: dict[str, set[str]] = {}
+    try:
+        for yp in _list_prefixes(""):
+            year_part = yp.rstrip("/")
+            if not year_part.isdigit() or len(year_part) != 4:
+                continue
+            for mp in _list_prefixes(yp):
+                month_part = mp[len(yp):].rstrip("/")
+                if not month_part.isdigit() or len(month_part) != 2:
+                    continue
+                for up in _list_prefixes(mp):
+                    username = up[len(mp):].rstrip("/")
+                    if username == "download":
+                        continue
+                    for cp in _list_prefixes(up):
+                        consumer_number = cp[len(up):].rstrip("/")
+                        if consumer_number == "download":
+                            continue
+                        json_key = f"{cp}{consumer_number}.json"
+                        if _key_exists(json_key):
+                            user_consumers.setdefault(username, set()).add(consumer_number)
+    except (BotoCoreError, ClientError) as exc:
+        logger.error("R2 consumer listing failed: %s", exc)
+        raise
+
+    return sorted(
+        [{"username": u, "consumer_count": len(c)} for u, c in user_consumers.items()],
+        key=lambda x: x["username"],
+    )
+
+
+def get_consumer_details(username: str) -> list[dict]:
+    """
+    Return all consumers for a username with their uploaded_files from each
+    consumer JSON. Reads across all year/month folders; deduplicates by
+    consumer_number (first occurrence wins).
+    """
+    safe_user = _safe_path_component(username)
+    seen: dict[str, dict] = {}
+    try:
+        for yp in _list_prefixes(""):
+            year_part = yp.rstrip("/")
+            if not year_part.isdigit() or len(year_part) != 4:
+                continue
+            for mp in _list_prefixes(yp):
+                month_part = mp[len(yp):].rstrip("/")
+                if not month_part.isdigit() or len(month_part) != 2:
+                    continue
+                user_prefix = f"{mp}{safe_user}/"
+                for cp in _list_prefixes(user_prefix):
+                    consumer_number = cp[len(user_prefix):].rstrip("/")
+                    if consumer_number == "download" or consumer_number in seen:
+                        continue
+                    json_key = f"{cp}{consumer_number}.json"
+                    try:
+                        meta = get_json_object(json_key)
+                    except RuntimeError:
+                        meta = None
+                    if meta and isinstance(meta, dict):
+                        seen[consumer_number] = {
+                            "consumer_number": consumer_number,
+                            "meta": meta,
+                            "uploaded_files": meta.get("uploaded_files", []),
+                        }
+    except (BotoCoreError, ClientError) as exc:
+        logger.error("R2 consumer detail listing failed for '%s': %s", username, exc)
+        raise
+
+    return sorted(seen.values(), key=lambda x: x["consumer_number"])
+
+
+def get_consumer_doc_bytes(object_key: str) -> tuple[bytes | None, str]:
+    """
+    Fetch a consumer document from R2 after validating the key matches the
+    expected consumer-document path structure. Returns (bytes, content_type).
+    Rejects anything that does not match {year}/{month}/{user}/{consumer}/{file}.ext
+    """
+    if not _VALID_CONSUMER_DOC_RE.match(object_key):
+        return None, ""
+    if ".." in object_key or object_key.startswith("/"):
+        return None, ""
+    ext = object_key.rsplit(".", 1)[-1].lower()
+    content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
+    data = _get_object_bytes(object_key)
+    return data, content_type

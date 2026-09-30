@@ -1,6 +1,7 @@
 import logging
-from fastapi import APIRouter, Request, Response, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from urllib.parse import quote
+from fastapi import APIRouter, Request, Response, Form, UploadFile, File, Query
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from app.sessions import get_current_username
@@ -8,7 +9,10 @@ from app.user_store import get_user, get_all_users, create_user, update_user, de
 from app.auth import hash_password
 from app.csrf import generate_csrf_token, validate_csrf
 from app.validators import validate_upload
-from app.storage import admin_upload_document, find_consumer_document
+from app.storage import (
+    admin_upload_document, find_consumer_document,
+    list_consumer_users, get_consumer_details, get_consumer_doc_bytes,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -192,3 +196,62 @@ async def admin_user_delete(
         return _render(request, response, user_error=str(exc))
 
     return _render(request, response, user_success=f"User '{del_username}' deleted.")
+
+
+# ---------------------------------------------------------------------------
+# User Data API — admin-only JSON/stream endpoints, called via fetch from /admin
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/user-data")
+async def admin_user_data(request: Request):
+    if not _require_admin(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+    try:
+        users = list_consumer_users()
+    except Exception as exc:
+        logger.exception("Failed to list consumer users: %s", exc)
+        return JSONResponse({"error": "Failed to load user data."}, status_code=500)
+    return JSONResponse({"users": users})
+
+
+@router.get("/admin/consumer-details")
+async def admin_consumer_details(request: Request, username: str = Query(...)):
+    if not _require_admin(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+    username = username.strip()
+    if not username:
+        return JSONResponse({"error": "Username is required."}, status_code=400)
+    try:
+        consumers = get_consumer_details(username)
+    except Exception as exc:
+        logger.exception("Failed to get consumer details for '%s': %s", username, exc)
+        return JSONResponse({"error": "Failed to load consumer details."}, status_code=500)
+    return JSONResponse({"username": username, "consumers": consumers})
+
+
+@router.get("/admin/consumer-doc")
+async def admin_consumer_doc(
+    request: Request,
+    key: str = Query(...),
+    disposition: str = Query("inline"),
+):
+    if not _require_admin(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    key = key.strip()
+    if not key or ".." in key or key.startswith("/"):
+        return JSONResponse({"error": "Invalid document key."}, status_code=400)
+
+    try:
+        data, content_type = get_consumer_doc_bytes(key)
+    except Exception as exc:
+        logger.exception("Failed to fetch consumer doc '%s': %s", key, exc)
+        return JSONResponse({"error": "Failed to retrieve document."}, status_code=500)
+
+    if data is None or not content_type:
+        return JSONResponse({"error": "Document not found or access denied."}, status_code=404)
+
+    filename = key.rsplit("/", 1)[-1]
+    cd = "inline" if disposition == "inline" else "attachment"
+    headers = {"Content-Disposition": f'{cd}; filename="{quote(filename)}"'}
+    return StreamingResponse(iter([data]), media_type=content_type, headers=headers)

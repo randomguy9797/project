@@ -1,145 +1,321 @@
 {% extends "base.html" %}
 {% block title %}Admin — Consumer Portal{% endblock %}
 {% block content %}
-<div class="card" style="max-width:600px;margin:0 auto;">
-  <h1>Admin Panel</h1>
 
-  <!-- ── Document Upload ─────────────────────────────────────────── -->
-  <h2 style="font-size:1.1rem;margin:0 0 0.75rem;">Upload Document</h2>
+{# ── Inline styles: override the shared .container / .card constraints ── #}
+<style>
+  /* Widen the container only on this page */
+  .container {
+    max-width: 1400px !important;
+    width: 95% !important;
+  }
 
-  {% if success %}
-  <div class="alert" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;margin-bottom:1rem;padding:0.75rem 1rem;border-radius:8px;font-size:0.9rem;">{{ success }}</div>
-  {% endif %}
-  {% if error %}
-  <div class="alert alert-error" role="alert">{{ error }}</div>
-  {% endif %}
+  /* TAble width */
+table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
 
-  <form method="post" action="/admin/upload" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+table th,
+table td {
+    text-align: center;
+    padding: 12px;
+}
 
-    <div class="field">
-      <label for="target_username">Username <span class="required">*</span></label>
-      <input type="text" id="target_username" name="target_username"
-        value="{{ upload_values.get('target_username', '') }}" required
-        placeholder="e.g. vijaybore"
-        style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      <span class="hint">User who will receive access to this document</span>
-    </div>
+  /* Reset the generic card padding/width for the admin card */
+  .admin-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 2rem 2rem 2.5rem !important;
+    box-sizing: border-box;
+  }
 
-    <div class="field">
-      <label for="consumer_number">Consumer Number <span class="required">*</span></label>
-      <input type="text" id="consumer_number" name="consumer_number"
-        value="{{ upload_values.get('consumer_number', '') }}" required
-        placeholder="e.g. 123456"
-        style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      <span class="hint">Stored under <code>YYYY/MM/{username}/download/</code></span>
-    </div>
+  /* Keep body top-aligned on wide screens */
+  body {
+    align-items: flex-start !important;
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+  }
+</style>
 
-    <div class="field">
-      <label for="upload_doc">Document <span class="required">*</span></label>
-      <input type="file" id="upload_doc" name="upload_doc" accept=".pdf,.jpg,.jpeg" required />
-      <span class="hint">PDF, JPG, JPEG &nbsp;|&nbsp; Max 10 MB</span>
-    </div>
+<div class="card admin-card">
 
-    <button type="submit" class="btn btn-primary">Upload &amp; Give Access</button>
-  </form>
-
-  <hr style="margin:2rem 0;border:none;border-top:1px solid #e5e7eb;" />
-
-  <!-- ── User Management ─────────────────────────────────────────── -->
-  <h2 style="font-size:1.1rem;margin:0 0 0.75rem;">User Management</h2>
-
-  {% if user_success %}
-  <div class="alert" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;margin-bottom:1rem;padding:0.75rem 1rem;border-radius:8px;font-size:0.9rem;">{{ user_success }}</div>
-  {% endif %}
-  {% if user_error %}
-  <div class="alert alert-error" role="alert">{{ user_error }}</div>
-  {% endif %}
-
-  <!-- Current users table -->
-  {% if users %}
-  <table style="width:100%;border-collapse:collapse;font-size:0.9rem;margin-bottom:1.25rem;">
-    <thead>
-      <tr style="background:#f3f4f6;">
-        <th style="padding:0.5rem 0.75rem;text-align:left;border-bottom:1px solid #e5e7eb;">Username</th>
-        <th style="padding:0.5rem 0.75rem;text-align:left;border-bottom:1px solid #e5e7eb;">Role</th>
-        <th style="padding:0.5rem 0.75rem;text-align:left;border-bottom:1px solid #e5e7eb;">Status</th>
-        <th style="padding:0.5rem 0.75rem;border-bottom:1px solid #e5e7eb;"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr style="border-bottom:1px solid #f3f4f6;">
-        <td style="padding:0.5rem 0.75rem;font-weight:600;">{{ u.username }}</td>
-        <td style="padding:0.5rem 0.75rem;color:#6b7280;">{{ "Admin" if u.is_admin else "User" }}</td>
-        <td style="padding:0.5rem 0.75rem;">
-          <span style="color:{% if u.is_active %}#16a34a{% else %}#dc2626{% endif %};">
-            {{ "Active" if u.is_active else "Inactive" }}
-          </span>
-        </td>
-        <td style="padding:0.5rem 0.75rem;">
-          <form method="post" action="/admin/user/delete" style="display:inline;"
-            onsubmit="return confirm('Delete user {{ u.username }}?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="del_username" value="{{ u.username }}" />
-            <button type="submit" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:0.85rem;padding:0;">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-
-  <!-- Add user -->
-  <details style="margin-bottom:1rem;">
-    <summary style="cursor:pointer;font-weight:600;font-size:0.95rem;padding:0.5rem 0;">&#43; Add User</summary>
-    <form method="post" action="/admin/user/add" style="margin-top:0.75rem;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <div class="field">
-        <label>Username <span class="required">*</span></label>
-        <input type="text" name="new_username" required
-          style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      </div>
-      <div class="field">
-        <label>Password <span class="required">*</span></label>
-        <input type="password" name="new_password" required
-          style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      </div>
-      <div class="field" style="display:flex;align-items:center;gap:0.5rem;">
-        <input type="checkbox" id="new_is_admin" name="new_is_admin" value="1" style="width:auto;" />
-        <label for="new_is_admin" style="margin:0;">Admin privileges</label>
-      </div>
-      <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Add User</button>
-    </form>
-  </details>
-
-  <!-- Edit user -->
-  <details style="margin-bottom:1rem;">
-    <summary style="cursor:pointer;font-weight:600;font-size:0.95rem;padding:0.5rem 0;">&#9998; Edit User</summary>
-    <form method="post" action="/admin/user/edit" style="margin-top:0.75rem;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-      <div class="field">
-        <label>Current Username <span class="required">*</span></label>
-        <input type="text" name="edit_username" required
-          style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      </div>
-      <div class="field">
-        <label>New Username <span style="color:#6b7280;font-size:0.85rem;">(leave blank to keep)</span></label>
-        <input type="text" name="edit_new_username"
-          style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      </div>
-      <div class="field">
-        <label>New Password <span style="color:#6b7280;font-size:0.85rem;">(leave blank to keep)</span></label>
-        <input type="password" name="edit_new_password"
-          style="width:100%;padding:0.65rem 0.9rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;" />
-      </div>
-      <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Save Changes</button>
-    </form>
-  </details>
-
-  <div class="logout-section">
-    <a href="/logout" class="btn btn-secondary" style="display:block;text-align:center;">Logout</a>
+  <div class="admin-header">
+    <h1>Admin Panel</h1>
   </div>
-</div>
+
+  <!-- ── TOP ROW: Upload (left) + User Management (right) ─────────── -->
+  <div class="admin-top-grid">
+
+    <!-- Upload Document -->
+    <section class="admin-section admin-panel">
+      <h2 class="section-title">Upload Document</h2>
+
+      {% if success %}
+      <div class="alert alert-ok" role="status">{{ success }}</div>
+      {% endif %}
+      {% if error %}
+      <div class="alert alert-error" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/admin/upload" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="field">
+          <label for="target_username">Username <span class="required">*</span></label>
+          <input type="text" id="target_username" name="target_username"
+            value="{{ upload_values.get('target_username', '') }}" required
+            placeholder="e.g. vijaybore" />
+          <span class="hint">User who will receive access to this document</span>
+        </div>
+        <div class="field">
+          <label for="consumer_number">Consumer Number <span class="required">*</span></label>
+          <input type="text" id="consumer_number" name="consumer_number"
+            value="{{ upload_values.get('consumer_number', '') }}" required
+            placeholder="e.g. 123456" />
+          <span class="hint">Stored under <code>YYYY/MM/{username}/download/</code></span>
+        </div>
+        <div class="field">
+          <label for="upload_doc">Document <span class="required">*</span></label>
+          <input type="file" id="upload_doc" name="upload_doc" accept=".pdf,.jpg,.jpeg" required />
+          <span class="hint">PDF, JPG, JPEG &nbsp;|&nbsp; Max 10 MB</span>
+        </div>
+        <button type="submit" class="btn btn-primary">Upload &amp; Give Access</button>
+      </form>
+    </section>
+
+    <!-- User Management -->
+    <section class="admin-section admin-panel">
+      <h2 class="section-title">User Management</h2>
+
+      {% if user_success %}
+      <div class="alert alert-ok" role="status">{{ user_success }}</div>
+      {% endif %}
+      {% if user_error %}
+      <div class="alert alert-error" role="alert">{{ user_error }}</div>
+      {% endif %}
+
+      {% if users %}
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td><strong>{{ u.username }}</strong></td>
+              <td class="muted">{{ "Admin" if u.is_admin else "User" }}</td>
+              <td>
+                <span class="{{ 'status-active' if u.is_active else 'status-inactive' }}">
+                  {{ "Active" if u.is_active else "Inactive" }}
+                </span>
+              </td>
+              <td class="td-action">
+                <form method="post" action="/admin/user/delete" style="display:inline;"
+                  onsubmit="return confirm('Delete user {{ u.username }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                  <input type="hidden" name="del_username" value="{{ u.username }}" />
+                  <button type="submit" class="link-danger">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      <div class="user-mgmt-actions">
+        <details class="expandable">
+          <summary>&#43; Add User</summary>
+          <form method="post" action="/admin/user/add" class="expand-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <div class="field">
+              <label>Username <span class="required">*</span></label>
+              <input type="text" name="new_username" required />
+            </div>
+            <div class="field">
+              <label>Password <span class="required">*</span></label>
+              <input type="password" name="new_password" required />
+            </div>
+            <div class="field field-inline">
+              <input type="checkbox" id="new_is_admin" name="new_is_admin" value="1" />
+              <label for="new_is_admin">Admin privileges</label>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Add User</button>
+          </form>
+        </details>
+
+        <details class="expandable">
+          <summary>&#9998; Edit User</summary>
+          <form method="post" action="/admin/user/edit" class="expand-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <div class="field">
+              <label>Current Username <span class="required">*</span></label>
+              <input type="text" name="edit_username" required />
+            </div>
+            <div class="field">
+              <label>New Username <span class="opt">(leave blank to keep)</span></label>
+              <input type="text" name="edit_new_username" />
+            </div>
+            <div class="field">
+              <label>New Password <span class="opt">(leave blank to keep)</span></label>
+              <input type="password" name="edit_new_password" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+          </form>
+        </details>
+      </div>
+
+      <div class="logout-section">
+        <a href="/logout" class="btn btn-secondary" style="display:block;text-align:center;">Logout</a>
+      </div>
+    </section>
+
+  </div><!-- /.admin-top-grid -->
+
+  <!-- ── BOTTOM ROW: User Data (full width) ───────────────────────── -->
+  <section class="admin-section admin-panel admin-userdata-panel">
+    <h2 class="section-title">User Data</h2>
+
+    <div id="ud-users-wrap">
+      <p class="muted ud-loading">Loading…</p>
+    </div>
+
+    <div id="ud-detail-wrap" style="display:none;">
+      <div class="ud-detail-header">
+        <button id="ud-back-btn" class="btn btn-secondary btn-sm" style="width:auto;">&#8592; Back</button>
+        <span id="ud-detail-title" class="ud-detail-username"></span>
+      </div>
+      <div id="ud-detail-content"></div>
+    </div>
+  </section>
+
+</div><!-- /.admin-card -->
+
+<script>
+(function () {
+  var usersWrap     = document.getElementById('ud-users-wrap');
+  var detailWrap    = document.getElementById('ud-detail-wrap');
+  var detailTitle   = document.getElementById('ud-detail-title');
+  var detailContent = document.getElementById('ud-detail-content');
+  var backBtn       = document.getElementById('ud-back-btn');
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Load user summary table ──────────────────────────────────────
+  fetch('/admin/user-data')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        usersWrap.innerHTML = '<p class="alert alert-error">' + esc(data.error) + '</p>';
+        return;
+      }
+      if (!data.users || data.users.length === 0) {
+        usersWrap.innerHTML = '<p class="muted" style="font-size:0.9rem;">No consumer submissions found.</p>';
+        return;
+      }
+      var html = '<div class="table-wrap"><table class="admin-table ud-summary-table"><thead><tr>'
+        + '<th>Username</th><th>Consumers Created</th><th>Action</th>'
+        + '</tr></thead><tbody>';
+      data.users.forEach(function(u) {
+        html += '<tr>'
+          + '<td><strong>' + esc(u.username) + '</strong></td>'
+          + '<td>' + esc(u.consumer_count) + '</td>'
+          + '<td class="td-action"><button class="btn-view" data-user="' + esc(u.username) + '">View</button></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+      usersWrap.innerHTML = html;
+      usersWrap.querySelectorAll('.btn-view').forEach(function(btn) {
+        btn.addEventListener('click', function() { loadDetail(btn.dataset.user); });
+      });
+    })
+    .catch(function() {
+      usersWrap.innerHTML = '<p class="alert alert-error">Failed to load user data.</p>';
+    });
+
+  // ── Load consumer detail for a user ─────────────────────────────
+  function loadDetail(username) {
+    detailContent.innerHTML = '<p class="muted ud-loading">Loading…</p>';
+    detailTitle.textContent = 'User: ' + username;
+    usersWrap.style.display  = 'none';
+    detailWrap.style.display = 'block';
+
+    fetch('/admin/consumer-details?username=' + encodeURIComponent(username))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          detailContent.innerHTML = '<p class="alert alert-error">' + esc(data.error) + '</p>';
+          return;
+        }
+        if (!data.consumers || data.consumers.length === 0) {
+          detailContent.innerHTML = '<p class="muted" style="font-size:0.9rem;">No consumers found.</p>';
+          return;
+        }
+        var html = '<div class="table-wrap"><table class="admin-table consumer-detail-table"><thead><tr>'
+          + '<th>Consumer No.</th><th>Name</th><th>Uploaded Documents</th>'
+          + '</tr></thead><tbody>';
+
+        data.consumers.forEach(function(c) {
+          var files   = c.uploaded_files || [];
+          var meta    = c.meta || {};
+          var rowspan = files.length || 1;
+          var name    = esc(meta.consumer_name || '—');
+
+          if (files.length === 0) {
+            html += '<tr>'
+              + '<td class="consumer-num-cell">' + esc(c.consumer_number) + '</td>'
+              + '<td class="muted">' + name + '</td>'
+              + '<td class="muted">No documents</td>'
+              + '</tr>';
+          } else {
+            files.forEach(function(f, idx) {
+              var label    = esc(f.label || 'Document');
+              var filename = esc(f.filename || '');
+              var key      = f.key || '';
+              var viewUrl  = '/admin/consumer-doc?key=' + encodeURIComponent(key) + '&disposition=inline';
+              var dlUrl    = '/admin/consumer-doc?key=' + encodeURIComponent(key) + '&disposition=attachment';
+
+              html += '<tr>';
+              if (idx === 0) {
+                html += '<td rowspan="' + rowspan + '" class="consumer-num-cell">' + esc(c.consumer_number) + '</td>'
+                      + '<td rowspan="' + rowspan + '" class="muted name-cell">' + name + '</td>';
+              }
+              html += '<td class="doc-row">'
+                + '<span class="doc-label">' + label + '</span>'
+                + '<span class="doc-filename"> — ' + filename + '</span>'
+                + '<span class="doc-actions">'
+                + '<a href="' + viewUrl + '" target="_blank" class="doc-link doc-link-view">View</a>'
+                + '<a href="' + dlUrl + '" class="doc-link doc-link-dl">Download</a>'
+                + '</span>'
+                + '</td>';
+              html += '</tr>';
+            });
+          }
+        });
+        html += '</tbody></table></div>';
+        detailContent.innerHTML = html;
+      })
+      .catch(function() {
+        detailContent.innerHTML = '<p class="alert alert-error">Failed to load consumer details.</p>';
+      });
+  }
+
+  backBtn.addEventListener('click', function() {
+    detailWrap.style.display = 'none';
+    usersWrap.style.display  = 'block';
+  });
+})();
+</script>
 {% endblock %}
