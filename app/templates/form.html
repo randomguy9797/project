@@ -63,7 +63,7 @@
     <div class="field">
       <label for="consumer_number">Consumer Number <span class="required">*</span></label>
       <input type="number" id="consumer_number" name="consumer_number"
-        value="{{ values.get('consumer_number', '') }}" required />
+        value="{{ values.get('consumer_number', '') }}" />
     </div>
 
     <!-- Consumer Name -->
@@ -167,9 +167,9 @@
       <span class="hint" style="display:block;margin-bottom:0.75rem;">Allowed: PDF, JPG, JPEG &nbsp;|&nbsp; Max size: 10 MB each</span>
 
       {% set uploads = [
-        ('upload_aadhar',    'Upload Aadhar',            True),
-        ('upload_pan',       'Upload PAN Card',           True),
-        ('upload_ownership', 'Upload Ownership Document', True),
+        ('upload_aadhar',    'Upload Aadhar',            False),
+        ('upload_pan',       'Upload PAN Card',           False),
+        ('upload_ownership', 'Upload Ownership Document', False),
         ('upload_bond',      'Upload Bond',               False),
         ('upload_energy_bill','Upload Energy Bill',       False),
         ('upload_other',     'Upload Other Documents',    False),
