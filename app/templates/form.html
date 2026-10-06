@@ -50,7 +50,7 @@
 
     <!-- WSS Services -->
     <div class="field">
-      <label for="wss_service">WSS Services <span class="required">*</span></label>
+      <label for="wss_service">WSS Services </label>
       <select id="wss_service" name="wss_service" required style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
         <option value="" disabled {% if not values.get('wss_service') %}selected{% endif %}>-- Select Service --</option>
         {% for opt in ['New Connection','Change of Name','PD Request','Load Addition','Address Change','Tariff Change','SD Refund','Solar Load Expansion/Reduction'] %}
@@ -61,14 +61,14 @@
 
     <!-- Consumer Number -->
     <div class="field">
-      <label for="consumer_number">Consumer Number <span class="required">*</span></label>
-      <input type="number" id="consumer_number" name="consumer_number"
+      <label for="consumer_number">Consumer Number</label>
+      <input type="text" id="consumer_number" name="consumer_number"
         value="{{ values.get('consumer_number', '') }}" />
     </div>
 
     <!-- Consumer Name -->
     <div class="field">
-      <label>Consumer Name <span class="required">*</span></label>
+      <label>Consumer Name </label>
       <div style="display:flex;gap:0.5rem;">
         <input type="text" name="consumer_first_name" placeholder="First Name"
           value="{{ values.get('consumer_first_name', '') }}" required style="flex:1;" />
@@ -82,7 +82,7 @@
     <!-- Application ID -->
     <div class="field">
       <label for="application_id">Application ID</label>
-      <input type="number" id="application_id" name="application_id"
+      <input type="text" id="application_id" name="application_id"
         value="{{ values.get('application_id', '') }}" />
     </div>
 
@@ -151,7 +151,7 @@
       <legend style="font-weight:600;padding:0 0.5rem;color:#333;">Bank Details (For SD Refund)</legend>
       <div class="field" style="margin-bottom:1rem;">
         <label for="account_number">Account Number</label>
-        <input type="number" id="account_number" name="account_number"
+        <input type="text" id="account_number" name="account_number"
           value="{{ values.get('account_number', '') }}" />
       </div>
       <div class="field" style="margin-bottom:0;">
