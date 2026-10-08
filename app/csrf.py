@@ -2,7 +2,7 @@ import hmac
 import hashlib
 import secrets
 import time
-from fastapi import Response
+from fastapi import Request, Response
 from app.config import settings
 
 CSRF_COOKIE = "csrf_token"
