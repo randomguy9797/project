@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/api/index.py" }
+  ]
+}
