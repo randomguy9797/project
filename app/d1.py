@@ -176,6 +176,90 @@ def db_update_consumer_number(username: str, consumer_number: str) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Submissions / payment-tracking table operations
+# ---------------------------------------------------------------------------
+
+def db_create_submission(username: str, consumer_number: str) -> None:
+    """
+    Insert a new UNPAID submission record.
+    Silently ignores duplicate (username, consumer_number) pairs so that
+    retried requests never create duplicate records.
+    """
+    _query(
+        "INSERT OR IGNORE INTO submissions (username, consumer_number, payment_status) "
+        "VALUES (?1, ?2, 'UNPAID')",
+        [username, consumer_number],
+    )
+
+
+def db_get_submissions_for_user(username: str) -> list[dict]:
+    """Return all submission records for a user, ordered by submitted_at."""
+    return _query(
+        "SELECT id, username, consumer_number, payment_status, submitted_at, updated_at "
+        "FROM submissions WHERE username = ?1 ORDER BY submitted_at",
+        [username],
+    )
+
+
+def db_count_unpaid_submissions(username: str) -> int:
+    """Return the number of UNPAID submissions for a user."""
+    rows = _query(
+        "SELECT COUNT(*) AS cnt FROM submissions WHERE username = ?1 AND payment_status = 'UNPAID'",
+        [username],
+    )
+    return int(rows[0]["cnt"]) if rows else 0
+
+
+def db_get_submission_by_id(submission_id: int) -> Optional[dict]:
+    rows = _query(
+        "SELECT id, username, consumer_number, payment_status, submitted_at, updated_at "
+        "FROM submissions WHERE id = ?1 LIMIT 1",
+        [submission_id],
+    )
+    return rows[0] if rows else None
+
+
+def db_get_submission(username: str, consumer_number: str) -> Optional[dict]:
+    """Return one submission for an R2 user/consumer pair, if it exists."""
+    rows = _query(
+        "SELECT id, username, consumer_number, payment_status, submitted_at, updated_at "
+        "FROM submissions WHERE username = ?1 AND consumer_number = ?2 LIMIT 1",
+        [username, consumer_number],
+    )
+    return rows[0] if rows else None
+
+
+def db_update_payment_status(submission_id: int, new_status: str) -> None:
+    """Update payment_status for a single submission record by its primary key."""
+    if new_status not in {"PAID", "UNPAID"}:
+        raise ValueError("Payment status must be PAID or UNPAID.")
+    _query(
+        "UPDATE submissions SET payment_status = ?1, "
+        "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') "
+        "WHERE id = ?2",
+        [new_status, submission_id],
+    )
+
+
+def db_upsert_submission(username: str, consumer_number: str) -> str:
+    """
+    Insert a submission record if it does not already exist.
+    Used by the backfill script. Returns 'inserted' or 'skipped'.
+    """
+    existing = _query(
+        "SELECT id FROM submissions WHERE username = ?1 AND consumer_number = ?2 LIMIT 1",
+        [username, consumer_number],
+    )
+    if existing:
+        return "skipped"
+    _query(
+        "INSERT INTO submissions (username, consumer_number, payment_status) VALUES (?1, ?2, 'UNPAID')",
+        [username, consumer_number],
+    )
+    return "inserted"
+
+
 def db_upsert_user(
     username: str,
     password_hash: str,

@@ -21,6 +21,11 @@ from app.csrf import generate_csrf_token, validate_csrf
 from app.sessions import create_session, delete_session, get_current_username
 from app.user_store import get_user, get_all_users, create_user, update_user, delete_user
 from app.validators import validate_mobile, validate_upload
+from app.d1 import (
+    db_create_submission, db_count_unpaid_submissions,
+    db_get_submissions_for_user, db_get_submission_by_id, db_get_submission,
+    db_update_payment_status,
+)
 from app.storage import (
     CONTENT_TYPES, MAX_DOWNLOADS,
     current_year_month, upload_file, upload_metadata, delete_file,
@@ -123,12 +128,24 @@ async def api_logout(request: Request):
 
 @router.get("/form-data")
 async def api_form_data(request: Request):
-    """Return the data needed to render the form: admin docs for this user."""
+    """Return the data needed to render the form: admin docs + payment eligibility."""
     user = _require_user(request)
     if not user:
         return _unauth()
     docs = find_documents_for_user(user["username"])
-    return JSONResponse({"admin_docs": docs, "max_downloads": MAX_DOWNLOADS})
+    try:
+        unpaid_count = db_count_unpaid_submissions(user["username"])
+    except RuntimeError as exc:
+        logger.error("Payment eligibility check failed for '%s': %s", user["username"], exc)
+        # Fail safe: do NOT assume 0 — surface the error so the frontend blocks
+        return JSONResponse({"error": "Could not verify payment status. Please try again."}, status_code=503)
+    can_submit = unpaid_count < 3
+    return JSONResponse({
+        "admin_docs": docs,
+        "max_downloads": MAX_DOWNLOADS,
+        "unpaid_previous_count": unpaid_count,
+        "can_submit": can_submit,
+    })
 
 
 @router.post("/form")
@@ -163,6 +180,18 @@ async def api_form_post(
 
     if not validate_csrf(request, _csrf_header(request)):
         return JSONResponse({"error": "Invalid request. Please try again."}, status_code=400)
+
+    # Backend enforcement: reject if 3+ previous unpaid submissions
+    try:
+        unpaid_count = db_count_unpaid_submissions(user["username"])
+    except RuntimeError as exc:
+        logger.error("Submission blocked: payment check failed for '%s': %s", user["username"], exc)
+        return JSONResponse({"error": "Could not verify payment status. Please try again."}, status_code=503)
+    if unpaid_count >= 3:
+        return JSONResponse(
+            {"error": "You have 3 or more previous forms with pending payment. Please clear the pending fees before submitting."},
+            status_code=403,
+        )
 
     if mobile_number.strip() and not validate_mobile(mobile_number.strip()):
         return JSONResponse(
@@ -240,6 +269,16 @@ async def api_form_post(
             delete_file(key)
         delete_file(metadata_key)
         return JSONResponse({"error": "We couldn't submit your form. Please try again."}, status_code=503)
+
+    # --- Payment record (only after full R2 success) ---
+    try:
+        db_create_submission(username, normalized_consumer_number)
+    except Exception:
+        logger.exception(
+            "Payment record creation failed for '%s' / %s — submission already stored in R2",
+            username, normalized_consumer_number,
+        )
+        # R2 data is safe; do not fail the user response, but log prominently.
 
     logger.info("API submission by '%s', metadata R2 key: %s", username, metadata_key)
     return JSONResponse({"ok": True})
@@ -422,6 +461,66 @@ async def api_admin_user_delete(
 
 
 # ---------------------------------------------------------------------------
+# Admin — payment status update
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/payment")
+async def api_admin_payment(
+    request: Request,
+    submission_id: int | None = Form(None),
+    username: str = Form(""),
+    consumer_number: str = Form(""),
+    new_status: str = Form(...),
+):
+    admin = _require_admin(request)
+    if not admin:
+        return _forbidden()
+    if not validate_csrf(request, _csrf_header(request)):
+        return JSONResponse({"error": "Invalid request. Please try again."}, status_code=400)
+
+    if new_status not in ("PAID", "UNPAID"):
+        return JSONResponse({"error": "Invalid payment status."}, status_code=422)
+
+    try:
+        if submission_id is not None:
+            record = db_get_submission_by_id(submission_id)
+            if not record:
+                return JSONResponse({"error": "Submission not found."}, status_code=404)
+        else:
+            # Existing R2 submissions predate the payment table.  Allow an
+            # administrator to set their first status; INSERT OR IGNORE keeps
+            # this safe if two updates happen at once.
+            username = username.strip()
+            consumer_number = consumer_number.strip()
+            if not username or not consumer_number:
+                return JSONResponse(
+                    {"error": "Submission ID or username and consumer number are required."},
+                    status_code=422,
+                )
+            db_create_submission(username, consumer_number)
+            record = db_get_submission(username, consumer_number)
+            if not record:
+                logger.error("Payment update: D1 did not return newly created record for %s / %s", username, consumer_number)
+                return JSONResponse({"error": "Could not retrieve submission record."}, status_code=503)
+    except RuntimeError as exc:
+        logger.error("Payment update: D1 lookup failed: %s", exc)
+        return JSONResponse({"error": "Could not retrieve submission record."}, status_code=503)
+
+    try:
+        db_update_payment_status(record["id"], new_status)
+    except RuntimeError as exc:
+        logger.error("Payment update failed for id=%s: %s", record["id"], exc)
+        return JSONResponse({"error": "Failed to update payment status."}, status_code=503)
+
+    logger.info(
+        "Admin '%s' changed submission %s (%s / %s) → %s",
+        admin["username"], record["id"],
+        record["username"], record["consumer_number"], new_status,
+    )
+    return JSONResponse({"ok": True, "submission_id": record["id"], "payment_status": new_status})
+
+
+# ---------------------------------------------------------------------------
 # Admin — consumer data (proxied from existing admin routes, same auth)
 # ---------------------------------------------------------------------------
 
@@ -449,6 +548,26 @@ async def api_admin_consumer_details(request: Request, username: str = Query(...
     except Exception as exc:
         logger.exception("API: failed to get consumer details for '%s': %s", username, exc)
         return JSONResponse({"error": "Failed to load consumer details."}, status_code=500)
+
+    # Merge payment records from D1
+    try:
+        submissions = db_get_submissions_for_user(username)
+        payment_map = {s["consumer_number"]: s for s in submissions}
+    except RuntimeError as exc:
+        logger.error("API: payment lookup failed for '%s': %s", username, exc)
+        payment_map = {}
+
+    for c in consumers:
+        rec = payment_map.get(c["consumer_number"])
+        if rec:
+            c["payment_status"] = rec["payment_status"]
+            c["submission_id"] = rec["id"]
+            c["submitted_at"] = rec["submitted_at"]
+        else:
+            c["payment_status"] = None
+            c["submission_id"] = None
+            c["submitted_at"] = c["meta"].get("submitted_at")
+
     return JSONResponse({"username": username, "consumers": consumers})
 
 

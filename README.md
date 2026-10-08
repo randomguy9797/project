@@ -262,16 +262,19 @@ CLOUDFLARE_API_TOKEN=<cloudflare_api_token_with_d1_edit_permission>
 
 ### 4. Apply D1 Schema
 
-Create the `users` table in your D1 database. You can do this in two ways:
+Create the `users` and `submissions` tables in your D1 database. The
+`submissions` table tracks payment status for every completed form.
 
 **Option A — via the Cloudflare Dashboard SQL console:**
 
-Copy and paste the contents of `migrations/d1/0001_users.sql` into the D1 SQL console.
+Copy and run `migrations/d1/0001_users.sql`, then
+`migrations/d1/0002_submissions.sql`, in the D1 SQL console.
 
 **Option B — via Wrangler CLI:**
 
 ```bash
 wrangler d1 execute <YOUR_DB_NAME> --file=migrations/d1/0001_users.sql
+wrangler d1 execute <YOUR_DB_NAME> --file=migrations/d1/0002_submissions.sql
 ```
 
 **Option C — via the apply script:**
@@ -279,6 +282,19 @@ wrangler d1 execute <YOUR_DB_NAME> --file=migrations/d1/0001_users.sql
 ```bash
 python scripts/apply_d1_schema.py
 ```
+
+### 4a. Backfill existing submissions
+
+After applying the new submissions migration to an existing deployment, import
+payment records for metadata already in R2:
+
+```bash
+python scripts/backfill_submissions.py
+```
+
+The backfill is idempotent: it creates only missing rows and never overwrites a
+payment status already set by an administrator. Use `--dry-run` to review the
+R2 records first.
 
 ### 5. Seed Initial Users
 
@@ -442,7 +458,11 @@ Ensure **Public access** is disabled in the bucket **Settings**. Do not enable R
 
 ### 3. Apply the Schema
 
-Run the SQL in `migrations/d1/0001_users.sql` via the Cloudflare Dashboard SQL console, Wrangler, or the apply script (see [Apply D1 Schema](#4-apply-d1-schema)).
+Run both `migrations/d1/0001_users.sql` and
+`migrations/d1/0002_submissions.sql` via the Cloudflare Dashboard SQL console,
+Wrangler, or the apply script (see [Apply D1 Schema](#4-apply-d1-schema)). If
+the R2 bucket already contains form metadata, run
+`python scripts/backfill_submissions.py` afterward.
 
 ### 4. Update `.env`
 

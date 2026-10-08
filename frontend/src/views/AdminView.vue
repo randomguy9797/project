@@ -149,24 +149,42 @@
           <button class="btn btn-secondary btn-sm" style="width:auto;" @click="showDetail = false">&#8592; Back</button>
           <span class="ud-detail-username">User: {{ detailUsername }}</span>
         </div>
+        <p v-if="paymentError" class="alert alert-error">{{ paymentError }}</p>
         <p v-if="detailLoading" class="muted ud-loading">Loading…</p>
         <p v-else-if="detailError" class="alert alert-error">{{ detailError }}</p>
         <p v-else-if="!detailConsumers.length" class="muted" style="font-size:0.9rem;">No consumers found.</p>
         <div v-else class="table-wrap">
           <table class="admin-table consumer-detail-table">
             <thead>
-              <tr><th>Consumer No.</th><th>Name</th><th>Uploaded Documents</th></tr>
+              <tr><th>Consumer No.</th><th>Submitted At</th><th>Name</th><th>Uploaded Documents</th><th>Payment</th><th>Action</th></tr>
             </thead>
             <tbody>
               <template v-for="c in detailConsumers" :key="c.consumer_number">
                 <tr v-if="!c.uploaded_files.length">
                   <td class="consumer-num-cell">{{ c.consumer_number }}</td>
+                  <td class="muted" style="font-size:0.82rem;white-space:nowrap;">{{ formatDate(c.submitted_at) }}</td>
                   <td class="muted">{{ c.meta.consumer_name || '—' }}</td>
                   <td class="muted">No documents</td>
+                  <td>
+                    <span :class="c.payment_status === 'PAID' ? 'status-paid' : 'status-unpaid'">
+                      {{ c.payment_status || 'N/A' }}
+                    </span>
+                  </td>
+                  <td class="td-action">
+                    <button
+                      class="btn-pay-action"
+                      :class="c.payment_status === 'PAID' ? 'btn-mark-unpaid' : 'btn-mark-paid'"
+                      :disabled="paymentUpdating === paymentKey(c)"
+                      @click="togglePayment(c)"
+                    >
+                      {{ paymentUpdating === paymentKey(c) ? '…' : (c.payment_status === 'PAID' ? 'Mark Unpaid' : 'Mark Paid') }}
+                    </button>
+                  </td>
                 </tr>
                 <template v-else>
                   <tr v-for="(f, idx) in c.uploaded_files" :key="f.key">
                     <td v-if="idx === 0" :rowspan="c.uploaded_files.length" class="consumer-num-cell">{{ c.consumer_number }}</td>
+                    <td v-if="idx === 0" :rowspan="c.uploaded_files.length" class="muted" style="font-size:0.82rem;white-space:nowrap;">{{ formatDate(c.submitted_at) }}</td>
                     <td v-if="idx === 0" :rowspan="c.uploaded_files.length" class="muted name-cell">{{ c.meta.consumer_name || '—' }}</td>
                     <td>
                       <div class="doc-row">
@@ -177,6 +195,21 @@
                           <a :href="`/api/admin/consumer-doc?key=${encodeURIComponent(f.key)}&disposition=attachment`" class="doc-link doc-link-dl">Download</a>
                         </span>
                       </div>
+                    </td>
+                    <td v-if="idx === 0" :rowspan="c.uploaded_files.length">
+                      <span :class="c.payment_status === 'PAID' ? 'status-paid' : 'status-unpaid'">
+                        {{ c.payment_status || 'N/A' }}
+                      </span>
+                    </td>
+                    <td v-if="idx === 0" :rowspan="c.uploaded_files.length" class="td-action">
+                      <button
+                        class="btn-pay-action"
+                        :class="c.payment_status === 'PAID' ? 'btn-mark-unpaid' : 'btn-mark-paid'"
+                        :disabled="paymentUpdating === paymentKey(c)"
+                        @click="togglePayment(c)"
+                      >
+                        {{ paymentUpdating === paymentKey(c) ? '…' : (c.payment_status === 'PAID' ? 'Mark Unpaid' : 'Mark Paid') }}
+                      </button>
                     </td>
                   </tr>
                 </template>
@@ -306,6 +339,41 @@ const detailUsername = ref('')
 const detailLoading = ref(false)
 const detailError = ref(null)
 const detailConsumers = ref([])
+const paymentUpdating = ref(null)
+const paymentError = ref(null)
+
+async function togglePayment(consumer) {
+  paymentError.value = null
+  const newStatus = consumer.payment_status === 'PAID' ? 'UNPAID' : 'PAID'
+  paymentUpdating.value = paymentKey(consumer)
+  try {
+    const fd = new FormData()
+    if (consumer.submission_id) fd.append('submission_id', consumer.submission_id)
+    fd.append('username', detailUsername.value)
+    fd.append('consumer_number', consumer.consumer_number)
+    fd.append('new_status', newStatus)
+    const data = await apiPost('/admin/payment', fd)
+    consumer.payment_status = data.payment_status
+    consumer.submission_id = data.submission_id
+  } catch (e) {
+    paymentError.value = e?.error ?? 'Failed to update payment status.'
+  } finally {
+    paymentUpdating.value = null
+  }
+}
+
+function paymentKey(consumer) {
+  return consumer.submission_id ?? `${detailUsername.value}:${consumer.consumer_number}`
+}
+
+function formatDate(iso) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  } catch {
+    return iso
+  }
+}
 
 async function loadUdUsers() {
   udLoading.value = true
@@ -356,5 +424,54 @@ body {
   align-items: flex-start !important;
   padding-top: 1.5rem !important;
   padding-bottom: 2rem !important;
+}
+
+.status-paid {
+  color: #15803d;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.status-unpaid {
+  color: #b91c1c;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.btn-pay-action {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 5px;
+  border: 1.5px solid;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.btn-mark-paid {
+  border-color: #6ee7b7;
+  color: #065f46;
+  background: #f0fdf4;
+}
+
+.btn-mark-paid:hover {
+  background: #dcfce7;
+}
+
+.btn-mark-unpaid {
+  border-color: #fca5a5;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.btn-mark-unpaid:hover {
+  background: #fee2e2;
+}
+
+.btn-pay-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
