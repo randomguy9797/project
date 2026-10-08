@@ -2,7 +2,7 @@ import hmac
 import hashlib
 import secrets
 import time
-from fastapi import Request, Response
+from fastapi import Response
 from app.config import settings
 
 CSRF_COOKIE = "csrf_token"
@@ -27,10 +27,6 @@ def generate_csrf_token(response: Response) -> str:
         max_age=TOKEN_TTL,
     )
     return signed
-
-
-def get_csrf_token(request: Request) -> str:
-    return request.cookies.get(CSRF_COOKIE, "")
 
 
 def validate_csrf(request: Request, form_token: str) -> bool:

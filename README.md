@@ -1,6 +1,6 @@
 # Consumer Portal
 
-A lightweight, production-ready web application for submitting consumer details and file uploads. Built with FastAPI, PostgreSQL, and Cloudflare R2 for file storage.
+A production-ready web application for submitting consumer details and file uploads. Built with FastAPI (backend), Vue 3 (frontend), Cloudflare D1 (user database), and Cloudflare R2 (file storage).
 
 ---
 
@@ -16,33 +16,24 @@ A lightweight, production-ready web application for submitting consumer details 
    - [Clone & Virtual Environment](#1-clone--virtual-environment)
    - [Install Dependencies](#2-install-dependencies)
    - [Configure Environment Variables](#3-configure-environment-variables)
-   - [PostgreSQL Setup](#4-postgresql-setup)
-   - [Run Alembic Migrations](#5-run-alembic-migrations)
-   - [Seed Initial Users](#6-seed-initial-users)
-   - [Run Locally](#7-run-locally)
+   - [Apply D1 Schema](#4-apply-d1-schema)
+   - [Seed Initial Users](#5-seed-initial-users)
+   - [Run Locally](#6-run-locally)
 8. [User Management](#user-management)
 9. [Cloudflare R2 Setup](#cloudflare-r2-setup)
-   - [Create the Bucket](#1-create-the-bucket)
-   - [Create API Credentials](#2-create-api-credentials)
-   - [Configure Bucket as Private](#3-configure-bucket-as-private)
-   - [Configure 10-Day Lifecycle Rule](#4-configure-10-day-lifecycle-rule)
-10. [Render Deployment](#render-deployment)
-    - [Create Render PostgreSQL](#1-create-render-postgresql)
-    - [Create Render Web Service](#2-create-render-web-service)
-    - [Set Environment Variables on Render](#3-set-environment-variables-on-render)
-    - [Run Migrations on Render](#4-run-migrations-on-render)
-    - [Seed Users on Render](#5-seed-users-on-render)
-11. [Testing](#testing)
-12. [Environment Variables Reference](#environment-variables-reference)
-13. [Future Migrations](#future-migrations)
-14. [Troubleshooting](#troubleshooting)
-15. [Security Notes](#security-notes)
+10. [Cloudflare D1 Setup](#cloudflare-d1-setup)
+11. [Render Deployment](#render-deployment)
+12. [Vercel Deployment](#vercel-deployment)
+13. [Testing](#testing)
+14. [Environment Variables Reference](#environment-variables-reference)
+15. [Troubleshooting](#troubleshooting)
+16. [Security Notes](#security-notes)
 
 ---
 
 ## Project Overview
 
-Consumer Portal is a small personal-use application that allows exactly 3 authenticated users to submit consumer details along with a PDF or JPG file. Uploaded files are stored privately in Cloudflare R2 and automatically deleted after 10 days. Submission metadata is stored permanently in PostgreSQL.
+Consumer Portal allows authenticated users to submit consumer details along with document uploads (PDF/JPG). The admin can upload documents for users to download (with a 2-download limit). User accounts are stored in Cloudflare D1 (SQLite). All files and submission metadata are stored in Cloudflare R2 and automatically deleted after 10 days.
 
 Expected traffic: fewer than ~500 submissions per month.
 
@@ -53,75 +44,77 @@ Expected traffic: fewer than ~500 submissions per month.
 - Secure login with Argon2id password hashing
 - Server-side session authentication (1-hour expiry, HTTPOnly cookies)
 - CSRF protection on all state-changing requests
+- Vue 3 SPA frontend (served by FastAPI in production)
+- Admin panel: upload documents for users, manage user accounts
+- Per-user document download with a 2-download limit
 - Submission form with server-side validation
 - Indian 10-digit mobile number validation
 - File upload (PDF, JPG, JPEG) with magic-byte type detection
 - 10 MB file size limit
-- Private Cloudflare R2 file storage with UUID-based object keys
+- Private Cloudflare R2 file storage with structured object keys
 - Automatic R2 file deletion after 10 days via lifecycle rules
-- PostgreSQL submission metadata storage
-- Partial failure handling (R2 orphan cleanup on DB failure)
-- Mobile-first responsive UI with plain HTML5 + CSS3
-- No JavaScript required
-- CLI tools for user seeding and management
+- Submission metadata stored as JSON in R2
+- User accounts stored in Cloudflare D1 (SQLite REST API)
+- Partial failure handling (R2 orphan cleanup on metadata failure)
+- Mobile-first responsive UI
 - Friendly 403 / 404 / 500 error pages
+- CLI tools for user seeding and management
 
 ---
 
 ## Architecture
 
 ```
-Browser
+Browser (Vue 3 SPA)
    |
    v
-FastAPI (Render)
+FastAPI (Render / Vercel)
    |
-   +---- PostgreSQL (Render)
-   |        |
-   |        +---- users
-   |        +---- submissions
+   +---- Cloudflare D1 (users table)
    |
    +---- Cloudflare R2
             |
-            +---- uploaded documents (uploads/YYYY/MM/<uuid>.ext)
+            +---- Submission documents  (YYYY/MM/<user>/<consumer>/)
+            +---- Admin-assigned docs   (YYYY/MM/<user>/download/)
+            +---- Submission metadata   (YYYY/MM/<user>/<consumer>/<consumer>.json)
+            +---- Admin docs index      (admin_docs.json)
             |
-            +---- automatic deletion after 10 days
+            +---- Automatic deletion after 10 days
 ```
 
 Authentication flow:
 
 ```
-Browser → Login page → FastAPI → PostgreSQL user verification
-       → Secure HTTPOnly session cookie → Submission form
+Browser → /api/csrf → GET CSRF token
+Browser → /api/login (POST) → FastAPI → D1 user verification
+       → Secure HTTPOnly session cookie → Vue SPA navigates to /form
 ```
 
 ---
 
 ## Technology Stack
 
-| Layer        | Technology                        |
-|--------------|-----------------------------------|
-| Language     | Python 3.12+                      |
-| Web framework| FastAPI                           |
-| Templates    | Jinja2 (server-rendered HTML)     |
-| Frontend     | Plain HTML5 + CSS3 (no JS)        |
-| Database     | PostgreSQL                        |
-| ORM          | SQLAlchemy 2.x                    |
-| Migrations   | Alembic                           |
-| File storage | Cloudflare R2 (S3-compatible)     |
-| R2 client    | boto3                             |
-| Password hash| Argon2id (argon2-cffi)            |
-| Server       | Uvicorn                           |
-| Hosting      | Render                            |
+| Layer         | Technology                        |
+|---------------|-----------------------------------|
+| Language      | Python 3.12+                      |
+| Web framework | FastAPI                           |
+| Frontend      | Vue 3 + Vue Router (Vite build)   |
+| Templates     | Jinja2 (legacy HTML routes)       |
+| Database      | Cloudflare D1 (SQLite REST API)   |
+| File storage  | Cloudflare R2 (S3-compatible)     |
+| R2 client     | boto3                             |
+| D1 client     | httpx (REST API)                  |
+| Password hash | Argon2id (argon2-cffi)            |
+| Server        | Uvicorn                           |
+| Hosting       | Render or Vercel                  |
 
 ---
 
 ## Requirements
 
 - Python 3.12 or higher
-- PostgreSQL 14 or higher
-- A Cloudflare account with R2 enabled
-- A Render account (for deployment)
+- Node.js 18 or higher (for frontend build)
+- A Cloudflare account with R2 and D1 enabled
 
 ---
 
@@ -132,56 +125,74 @@ project/
 │
 ├── app/
 │   ├── __init__.py
-│   ├── main.py          # FastAPI app, routers, error handlers
+│   ├── main.py          # FastAPI app, routers, SPA serving, error handlers
 │   ├── config.py        # Settings loaded from environment variables
-│   ├── database.py      # SQLAlchemy engine and session
-│   ├── models.py        # User and Submission ORM models
-│   ├── schemas.py       # Pydantic schemas
 │   ├── auth.py          # Argon2id password hashing/verification
 │   ├── sessions.py      # Server-side session management
 │   ├── csrf.py          # CSRF token generation and validation
-│   ├── storage.py       # Cloudflare R2 upload/delete via boto3
+│   ├── storage.py       # Cloudflare R2 upload/download/delete via boto3
 │   ├── validators.py    # Mobile number and file type validation
+│   ├── user_store.py    # User CRUD (delegates to d1.py)
+│   ├── d1.py            # Cloudflare D1 REST API client
 │   │
 │   ├── routes/
-│   │   ├── auth.py          # GET/POST /login, POST /logout
-│   │   └── submissions.py   # GET/POST /form
+│   │   ├── api.py           # JSON API for Vue frontend (/api/*)
+│   │   ├── auth.py          # Legacy HTML login/logout routes
+│   │   ├── submissions.py   # Legacy HTML form route
+│   │   └── admin.py         # Legacy HTML admin routes
 │   │
-│   ├── templates/
+│   ├── templates/           # Jinja2 HTML templates (legacy / fallback)
 │   │   ├── base.html
 │   │   ├── login.html
 │   │   ├── form.html
 │   │   ├── success.html
+│   │   ├── admin.html
 │   │   └── errors/
 │   │       ├── 403.html
 │   │       ├── 404.html
 │   │       └── 500.html
 │   │
 │   └── static/
-│       └── css/
-│           └── style.css
+│       ├── css/
+│       │   └── style.css
+│       └── dist/            # Vue production build output (git-ignored)
+│           └── index.html
 │
-├── alembic/
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-│       └── 0001_initial_schema.py
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   │   └── client.js    # Axios-style fetch wrapper for /api/*
+│   │   ├── views/
+│   │   │   ├── LoginView.vue
+│   │   │   ├── FormView.vue
+│   │   │   ├── AdminView.vue
+│   │   │   └── SuccessView.vue
+│   │   ├── router/
+│   │   │   └── index.js
+│   │   ├── App.vue
+│   │   └── main.js
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js       # Builds to ../app/static/dist/
+│
+├── migrations/
+│   └── d1/
+│       └── 0001_users.sql   # D1 users table schema
+│
+├── scripts/
+│   ├── seed_users.py        # Create the initial 3 users in D1
+│   ├── manage_user.py       # Change username, password, or consumer number
+│   ├── apply_d1_schema.py   # Apply D1 migrations via REST API
+│   ├── migrate_users_r2_to_d1.py
+│   └── cleanup_r2_users.py
 │
 ├── tests/
 │   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_auth.py
-│   └── test_validators.py
+│   └── test_d1_user_store.py
 │
-├── scripts/
-│   ├── seed_users.py     # Create the initial 3 users
-│   └── manage_user.py    # Change username or password
-│
-├── alembic.ini
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
-├── Dockerfile
 └── README.md
 ```
 
@@ -207,7 +218,13 @@ source .venv/bin/activate
 ### 2. Install Dependencies
 
 ```bash
+# Python backend
 pip install -r requirements.txt
+
+# Vue frontend
+cd frontend
+npm install
+cd ..
 ```
 
 ### 3. Configure Environment Variables
@@ -226,14 +243,16 @@ Open `.env` and fill in your values:
 APP_ENV=development
 SECRET_KEY=replace-with-a-long-random-secret
 
-DATABASE_URL=postgresql+psycopg://postgres:yourpassword@localhost:5432/consumer_portal
-
 SESSION_MAX_AGE=3600
 
 R2_ENDPOINT_URL=https://<account_id>.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=your_r2_access_key
-R2_SECRET_ACCESS_KEY=your_r2_secret_key
-R2_BUCKET_NAME=your_bucket_name
+R2_ACCESS_KEY_ID=<r2_access_key_id>
+R2_SECRET_ACCESS_KEY=<r2_secret_access_key>
+R2_BUCKET_NAME=<r2_bucket_name>
+
+CLOUDFLARE_ACCOUNT_ID=<cloudflare_account_id>
+CLOUDFLARE_D1_DATABASE_ID=<d1_database_id>
+CLOUDFLARE_API_TOKEN=<cloudflare_api_token_with_d1_edit_permission>
 ```
 
 > To generate a strong SECRET_KEY:
@@ -241,72 +260,98 @@ R2_BUCKET_NAME=your_bucket_name
 > python -c "import secrets; print(secrets.token_hex(32))"
 > ```
 
-### 4. PostgreSQL Setup
+### 4. Apply D1 Schema
 
-Make sure PostgreSQL is running, then create the database:
+Create the `users` table in your D1 database. You can do this in two ways:
 
-```bash
-psql -U postgres -c "CREATE DATABASE consumer_portal;"
-```
+**Option A — via the Cloudflare Dashboard SQL console:**
 
-Or using pgAdmin / any PostgreSQL client — just create a database and update `DATABASE_URL` in `.env`.
+Copy and paste the contents of `migrations/d1/0001_users.sql` into the D1 SQL console.
 
-### 5. Run Alembic Migrations
+**Option B — via Wrangler CLI:**
 
 ```bash
-alembic upgrade head
+wrangler d1 execute <YOUR_DB_NAME> --file=migrations/d1/0001_users.sql
 ```
 
-This creates the `users` and `submissions` tables with all constraints and indexes.
+**Option C — via the apply script:**
 
-### 6. Seed Initial Users
+```bash
+python scripts/apply_d1_schema.py
+```
+
+### 5. Seed Initial Users
 
 ```bash
 python scripts/seed_users.py
 ```
 
-You will be prompted to enter a username and password for each of the 3 users. Passwords are not echoed to the terminal.
+You will be prompted to enter a username and password for each of the 3 users. The first user created is automatically the admin.
 
 Example session:
 
 ```
-Creating 3 users.
+Creating 3 users. The first user will be an admin.
 
 Username for user 1: alice
 Password for user 1:
 Confirm password for user 1:
-User 1 prepared.
+User 1 created as admin.
 
 Username for user 2: bob
 Password for user 2:
 Confirm password for user 2:
-User 2 prepared.
+User 2 created as standard user.
 
 Username for user 3: carol
 Password for user 3:
 Confirm password for user 3:
-User 3 prepared.
+User 3 created as standard user.
 
 All 3 users created successfully.
 ```
 
-> The script refuses to create a 4th user if 3 already exist.
+### 6. Run Locally
 
-### 7. Run Locally
+**Backend only (uses legacy Jinja2 templates):**
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open your browser at: **http://localhost:8000**
+**Backend + Vue frontend (recommended):**
 
-The root URL redirects to `/login` automatically.
+In one terminal:
+
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+In a second terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open your browser at **http://localhost:5173** (Vite dev server). API requests are proxied to FastAPI at port 8000.
+
+**Production build (Vue served by FastAPI):**
+
+```bash
+cd frontend
+npm run build
+cd ..
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+The build outputs to `app/static/dist/`. FastAPI detects `app/static/dist/index.html` and serves the Vue SPA for all navigable routes.
 
 ---
 
 ## User Management
 
-To change the username or password of any existing user:
+To change the username, password, or consumer number of any existing user:
 
 ```bash
 python scripts/manage_user.py
@@ -316,9 +361,9 @@ Example session:
 
 ```
 Existing users:
-  1. alice (active)
-  2. bob (active)
-  3. carol (active)
+  1. alice (active) [admin] — Consumer#: (not set)
+  2. bob (active) — Consumer#: 1234567890
+  3. carol (active) — Consumer#: (not set)
 
 Select user (1, 2, or 3): 2
 
@@ -326,21 +371,15 @@ Selected: bob
   1. Change username
   2. Change password
   3. Change both
-  4. Cancel
+  4. Set Consumer Number
+  5. Cancel
 
 Choice: 2
 New password:
 Confirm new password:
-Password updated.
 
 Changes saved successfully.
 ```
-
-Rules enforced by the script:
-- Cannot create a 4th user
-- New usernames must be unique
-- Passwords are hashed with Argon2id before storing
-- Existing passwords are never displayed
 
 ---
 
@@ -349,23 +388,16 @@ Rules enforced by the script:
 ### 1. Create the Bucket
 
 1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com)
-2. Go to **R2 Object Storage** in the left sidebar
-3. Click **Create bucket**
-4. Enter a bucket name (e.g. `consumer-portal-uploads`)
-5. Choose a region (or leave as automatic)
-6. Click **Create bucket**
+2. Go to **R2 Object Storage** → **Create bucket**
+3. Enter a bucket name (e.g. `consumer-portal-uploads`)
+4. Click **Create bucket**
 
 ### 2. Create API Credentials
 
-1. In the Cloudflare Dashboard, go to **R2 Object Storage**
-2. Click **Manage R2 API tokens** (top right)
-3. Click **Create API token**
-4. Give it a name (e.g. `consumer-portal-token`)
-5. Set permissions to **Object Read & Write**
-6. Under **Specify bucket**, select your bucket
-7. Click **Create API token**
-8. Copy the **Access Key ID** and **Secret Access Key** — you will not see the secret again
-9. Also copy the **Endpoint URL** shown on that page (format: `https://<account_id>.r2.cloudflarestorage.com`)
+1. Go to **R2 Object Storage** → **Manage R2 API tokens**
+2. Click **Create API token**
+3. Set permissions to **Object Read & Write**, scoped to your bucket
+4. Copy the **Access Key ID**, **Secret Access Key**, and **Endpoint URL**
 
 Update your `.env`:
 
@@ -376,105 +408,74 @@ R2_SECRET_ACCESS_KEY=your_secret_access_key
 R2_BUCKET_NAME=consumer-portal-uploads
 ```
 
-### 3. Configure Bucket as Private
+### 3. Keep the Bucket Private
 
-By default, R2 buckets are private (no public access). Confirm this:
-
-1. Go to your bucket in the Cloudflare Dashboard
-2. Click **Settings**
-3. Under **Public access**, ensure it is **not enabled**
-4. Do NOT connect a custom domain or enable R2.dev subdomain
-
-Files are never served publicly. The application only uploads to R2 — it never generates public URLs.
+Ensure **Public access** is disabled in the bucket **Settings**. Do not enable R2.dev subdomain or a custom domain. Files are never served publicly.
 
 ### 4. Configure 10-Day Lifecycle Rule
 
-1. Go to your bucket in the Cloudflare Dashboard
-2. Click **Settings**
-3. Scroll to **Object lifecycle rules**
-4. Click **Add rule**
-5. Configure:
+1. Go to your bucket → **Settings** → **Object lifecycle rules** → **Add rule**
+2. Configure:
    - **Rule name**: `delete-uploads-after-10-days`
-   - **Prefix filter**: `uploads/`
+   - **Prefix filter**: *(leave empty to apply to all objects)*
    - **Action**: Delete object
    - **Days after upload**: `10`
-6. Click **Save**
+3. Click **Save**
 
-This automatically deletes all objects under `uploads/` after 10 days. No application-level scheduled deletion is needed.
+---
 
-> The submission metadata in PostgreSQL is kept permanently even after the file is deleted from R2.
+## Cloudflare D1 Setup
+
+### 1. Create the D1 Database
+
+1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. Go to **Workers & Pages** → **D1 SQL Database** → **Create database**
+3. Enter a name (e.g. `consumer-portal-db`) and click **Create**
+4. Copy the **Database ID** shown on the database page
+
+### 2. Create an API Token with D1 Permission
+
+1. Go to **My Profile** → **API Tokens** → **Create Token**
+2. Use **Edit Cloudflare Workers** template, or create a custom token with:
+   - **D1**: Edit
+3. Copy the token
+
+### 3. Apply the Schema
+
+Run the SQL in `migrations/d1/0001_users.sql` via the Cloudflare Dashboard SQL console, Wrangler, or the apply script (see [Apply D1 Schema](#4-apply-d1-schema)).
+
+### 4. Update `.env`
+
+```env
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_D1_DATABASE_ID=your_d1_database_id
+CLOUDFLARE_API_TOKEN=your_api_token
+```
 
 ---
 
 ## Render Deployment
 
-### 1. Create Render PostgreSQL
+### 1. Create Render Web Service
 
-1. Log in to [Render](https://render.com)
-2. Click **New** → **PostgreSQL**
-3. Fill in:
-   - **Name**: `consumer-portal-db`
-   - **Region**: choose closest to your users
-   - **Plan**: Free (or Starter for production)
-4. Click **Create Database**
-5. Once created, copy the **External Database URL** — it looks like:
-   ```
-   postgresql://user:password@host/dbname
-   ```
-6. Change the scheme to `postgresql+psycopg://` for SQLAlchemy:
-   ```
-   postgresql+psycopg://user:password@host/dbname
-   ```
-
-### 2. Create Render Web Service
-
-1. Click **New** → **Web Service**
+1. Log in to [Render](https://render.com) → **New** → **Web Service**
 2. Connect your GitHub repository
 3. Configure:
-   - **Name**: `consumer-portal`
-   - **Region**: same as your database
-   - **Branch**: `main`
    - **Runtime**: Python 3
    - **Build Command**:
      ```bash
-     pip install -r requirements.txt
+     pip install -r requirements.txt && cd frontend && npm install && npm run build && cd ..
      ```
    - **Start Command**:
      ```bash
      uvicorn app.main:app --host 0.0.0.0 --port $PORT
      ```
-4. Click **Create Web Service**
 
-### 3. Set Environment Variables on Render
+### 2. Set Environment Variables on Render
 
-In your Render web service, go to **Environment** and add:
+In your Render web service → **Environment**, add all variables from the [Environment Variables Reference](#environment-variables-reference) table, with `APP_ENV=production`.
 
-| Key                  | Value                                              |
-|----------------------|----------------------------------------------------|
-| `APP_ENV`            | `production`                                       |
-| `SECRET_KEY`         | a long random string (use `secrets.token_hex(32)`) |
-| `DATABASE_URL`       | your Render PostgreSQL URL (with `+psycopg`)       |
-| `SESSION_MAX_AGE`    | `3600`                                             |
-| `R2_ENDPOINT_URL`    | your R2 endpoint URL                               |
-| `R2_ACCESS_KEY_ID`   | your R2 access key                                 |
-| `R2_SECRET_ACCESS_KEY` | your R2 secret key                               |
-| `R2_BUCKET_NAME`     | your R2 bucket name                                |
-
-### 4. Run Migrations on Render
-
-After the first deploy, open the Render **Shell** tab for your web service and run:
-
-```bash
-alembic upgrade head
-```
-
-Or add it to the build command so it runs automatically on every deploy:
-
-```bash
-pip install -r requirements.txt && alembic upgrade head
-```
-
-### 5. Seed Users on Render
+### 3. Seed Users on Render
 
 In the Render **Shell** tab:
 
@@ -482,15 +483,144 @@ In the Render **Shell** tab:
 python scripts/seed_users.py
 ```
 
-Follow the prompts to create the 3 users.
-
 > To change a user later, run `python scripts/manage_user.py` in the Render Shell.
+
+---
+
+## Vercel Deployment
+
+The project is deployed as a **single Vercel project**: Vercel runs the FastAPI backend via a Python serverless function and serves the Vue SPA build output as static files.
+
+### 1. Build the Vue Frontend Locally (or in CI)
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+This outputs the Vue SPA to `app/static/dist/`. Commit this directory (or let Vercel build it — see step 3).
+
+### 2. Create `vercel.json`
+
+Create `vercel.json` in the project root:
+
+```json
+{
+  "builds": [
+    {
+      "src": "app/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/static/(.*)",
+      "dest": "/app/main.py"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/app/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/app/main.py"
+    }
+  ]
+}
+```
+
+All requests are routed to FastAPI. FastAPI serves the Vue SPA for navigable routes and the static files from `app/static/`.
+
+### 3. Create `api/index.py` (Vercel entry point)
+
+Vercel's Python runtime requires the ASGI app to be importable from a file in the `api/` directory. Create `api/index.py`:
+
+```python
+from app.main import app
+```
+
+Update `vercel.json` to point to this entry:
+
+```json
+{
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/api/index.py" }
+  ]
+}
+```
+
+### 4. Add a Build Command for the Frontend
+
+In `vercel.json`, add an `installCommand` and `buildCommand` so Vercel builds the Vue app automatically:
+
+```json
+{
+  "installCommand": "pip install -r requirements.txt && cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build",
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/api/index.py" }
+  ]
+}
+```
+
+### 5. Deploy to Vercel
+
+**Option A — Vercel CLI:**
+
+```bash
+npm install -g vercel
+vercel login
+vercel --prod
+```
+
+**Option B — Vercel Dashboard:**
+
+1. Go to [vercel.com](https://vercel.com) → **Add New Project**
+2. Import your GitHub repository
+3. Set **Framework Preset** to **Other**
+4. Set **Root Directory** to `.` (project root)
+5. Click **Deploy**
+
+### 6. Set Environment Variables on Vercel
+
+In your Vercel project → **Settings** → **Environment Variables**, add all variables from the [Environment Variables Reference](#environment-variables-reference) table, with `APP_ENV=production`.
+
+### 7. Seed Users
+
+After the first deployment, use the Vercel CLI to run the seed script:
+
+```bash
+vercel env pull .env.production.local
+python scripts/seed_users.py
+```
+
+Or run it locally with production environment variables pointing to your live D1 database.
+
+### Notes on Vercel Limitations
+
+- Vercel serverless functions have a **10-second timeout** on the Hobby plan (60 seconds on Pro). Large file uploads may time out — consider upgrading to Pro or using Render for heavy workloads.
+- Vercel functions are **stateless** — server-side sessions stored in memory will not persist across invocations. The current session implementation uses signed cookies (via `itsdangerous`), which works correctly on Vercel.
+- The `/health` endpoint works normally on Vercel.
 
 ---
 
 ## Testing
 
-Tests use SQLite in-memory so no PostgreSQL setup is needed.
+Tests use mocked D1 responses — no live Cloudflare credentials are needed.
 
 Run all tests:
 
@@ -498,104 +628,66 @@ Run all tests:
 pytest tests/ -v
 ```
 
-Run a specific test file:
-
-```bash
-pytest tests/test_auth.py -v
-pytest tests/test_validators.py -v
-```
-
-Test coverage includes:
-- Valid and invalid login
-- CSRF validation
-- Unauthenticated access to `/form`
-- Session expiry
-- Logout
-- Mobile number validation (valid and invalid)
-- File type detection (PDF, JPG, unknown)
-
 ---
 
 ## Environment Variables Reference
 
-| Variable              | Required | Description                                              |
-|-----------------------|----------|----------------------------------------------------------|
-| `APP_ENV`             | Yes      | `development` or `production`                            |
-| `SECRET_KEY`          | Yes      | Long random string for CSRF signing                      |
-| `DATABASE_URL`        | Yes      | PostgreSQL connection string (`postgresql+psycopg://...`)|
-| `SESSION_MAX_AGE`     | No       | Session lifetime in seconds (default: `3600`)            |
-| `R2_ENDPOINT_URL`     | Yes      | Cloudflare R2 endpoint URL                               |
-| `R2_ACCESS_KEY_ID`    | Yes      | R2 API access key ID                                     |
-| `R2_SECRET_ACCESS_KEY`| Yes      | R2 API secret access key                                 |
-| `R2_BUCKET_NAME`      | Yes      | R2 bucket name                                           |
+| Variable                    | Required | Description                                              |
+|-----------------------------|----------|----------------------------------------------------------|
+| `APP_ENV`                   | Yes      | `development` or `production`                            |
+| `SECRET_KEY`                | Yes      | Long random string for CSRF and session signing          |
+| `SESSION_MAX_AGE`           | No       | Session lifetime in seconds (default: `3600`)            |
+| `R2_ENDPOINT_URL`           | Yes      | Cloudflare R2 endpoint URL                               |
+| `R2_ACCESS_KEY_ID`          | Yes      | R2 API access key ID                                     |
+| `R2_SECRET_ACCESS_KEY`      | Yes      | R2 API secret access key                                 |
+| `R2_BUCKET_NAME`            | Yes      | R2 bucket name                                           |
+| `CLOUDFLARE_ACCOUNT_ID`     | Yes      | Cloudflare account ID                                    |
+| `CLOUDFLARE_D1_DATABASE_ID` | Yes      | D1 database ID                                           |
+| `CLOUDFLARE_API_TOKEN`      | Yes      | Cloudflare API token with D1 Edit permission             |
 
 > In `production` mode (`APP_ENV=production`), session cookies are set with `Secure=True`, requiring HTTPS.
 
 ---
 
-## Future Migrations
-
-To create a new migration after changing `app/models.py`:
-
-```bash
-alembic revision --autogenerate -m "describe your change"
-```
-
-Review the generated file in `alembic/versions/`, then apply it:
-
-```bash
-alembic upgrade head
-```
-
-To roll back one migration:
-
-```bash
-alembic downgrade -1
-```
-
----
-
 ## Troubleshooting
-
-**`alembic upgrade head` fails with connection error**
-- Check that PostgreSQL is running
-- Verify `DATABASE_URL` in `.env` is correct
-- Ensure the database exists: `psql -U postgres -c "CREATE DATABASE consumer_portal;"`
-
-**`ModuleNotFoundError` when running scripts**
-- Make sure your virtual environment is activated
-- Run `pip install -r requirements.txt`
 
 **Login always fails**
 - Make sure you ran `python scripts/seed_users.py` and it completed successfully
-- Verify the user exists: `psql -U postgres -d consumer_portal -c "SELECT username FROM users;"`
+- Verify D1 credentials (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_D1_DATABASE_ID`, `CLOUDFLARE_API_TOKEN`) are correct
+
+**D1 request timed out**
+- Check your `CLOUDFLARE_API_TOKEN` has D1 Edit permission
+- Verify `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_D1_DATABASE_ID` are correct
 
 **R2 upload fails**
 - Check `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` in `.env`
 - Ensure the R2 API token has **Object Read & Write** permission on the correct bucket
-- The app will show "We couldn't submit your form. Please try again." and log the error server-side
+
+**Vue SPA not loading (shows Jinja template instead)**
+- Run `cd frontend && npm run build` — FastAPI only serves the SPA when `app/static/dist/index.html` exists
 
 **`Secure cookie` warning in development**
 - Set `APP_ENV=development` in `.env` — secure cookies are only enforced in production
 
-**Port already in use**
-- Change the port: `uvicorn app.main:app --reload --port 8001`
-
 **`seed_users.py` says "3 users already exist"**
 - Use `python scripts/manage_user.py` to change existing users instead
+
+**Vercel deployment: module not found**
+- Ensure `api/index.py` exists and `vercel.json` points to it
+- Check that `requirements.txt` is in the project root
 
 ---
 
 ## Security Notes
 
 - Passwords are hashed with **Argon2id** — never stored in plaintext
-- Sessions are stored server-side; only a random session ID is in the cookie
+- Sessions are signed with `itsdangerous` using `SECRET_KEY`; only a signed session ID is in the cookie
 - Cookies are **HTTPOnly**, **SameSite=Lax**, and **Secure** in production
-- **CSRF tokens** are required on all POST requests (login, form submit, logout)
+- **CSRF tokens** are required on all POST requests; Vue reads the token from a non-HttpOnly cookie and sends it as `X-CSRF-Token`
 - File type is validated using **magic bytes**, not just the file extension or browser MIME type
-- R2 object keys are **UUID-based** — original filenames are never used as keys
+- R2 object keys are structured and sanitised — original filenames are never used directly as keys
 - The R2 bucket is **private** — no public URLs are ever generated or exposed
-- All validation happens **server-side** — HTML5 attributes are UX helpers only
-- Error messages are **generic** — no stack traces, SQL errors, or internal paths are shown to users
+- All validation happens **server-side** — frontend attributes are UX helpers only
+- Error messages are **generic** — no stack traces, internal paths, or D1 errors are shown to users
 - There is **no public signup page** and **no password reset page**
-- The application enforces **exactly 3 users** at all times
+- Admin routes require `is_admin=1` in D1 — regular users cannot access `/admin` or `/api/admin/*`

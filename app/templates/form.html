@@ -51,8 +51,8 @@
     <!-- WSS Services -->
     <div class="field">
       <label for="wss_service">WSS Services </label>
-      <select id="wss_service" name="wss_service" required style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
-        <option value="" disabled {% if not values.get('wss_service') %}selected{% endif %}>-- Select Service --</option>
+      <select id="wss_service" name="wss_service" style="width:100%;padding:0.75rem 1rem;font-size:1rem;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;color:#1a1a2e;">
+        <option value="" {% if not values.get('wss_service') %}selected{% endif %}>-- Select Service --</option>
         {% for opt in ['New Connection','Change of Name','PD Request','Load Addition','Address Change','Tariff Change','SD Refund','Solar Load Expansion/Reduction'] %}
         <option value="{{ opt }}" {% if values.get('wss_service') == opt %}selected{% endif %}>{{ opt }}</option>
         {% endfor %}
@@ -71,11 +71,11 @@
       <label>Consumer Name </label>
       <div style="display:flex;gap:0.5rem;">
         <input type="text" name="consumer_first_name" placeholder="First Name"
-          value="{{ values.get('consumer_first_name', '') }}" required style="flex:1;" />
+          value="{{ values.get('consumer_first_name', '') }}" style="flex:1;" />
         <input type="text" name="consumer_second_name" placeholder="Second Name"
           value="{{ values.get('consumer_second_name', '') }}" style="flex:1;" />
         <input type="text" name="consumer_last_name" placeholder="Last Name"
-          value="{{ values.get('consumer_last_name', '') }}" required style="flex:1;" />
+          value="{{ values.get('consumer_last_name', '') }}" style="flex:1;" />
       </div>
     </div>
 

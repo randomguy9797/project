@@ -4,7 +4,6 @@ from fastapi import UploadFile
 MOBILE_RE = re.compile(r"^[6-9][0-9]{9}$")
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg"}
-ALLOWED_MIME_TYPES = {"application/pdf", "image/jpeg"}
 
 # Magic bytes for file type detection
 _MAGIC = {

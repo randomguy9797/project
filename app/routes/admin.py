@@ -80,7 +80,8 @@ async def admin_upload(
 
     if not target_username:
         return _render(request, response, error="Username is required.", upload_values=upload_values)
-    if not get_user(target_username) or not get_user(target_username).get("is_active"):
+    target_user = get_user(target_username)
+    if not target_user or not target_user.get("is_active"):
         return _render(request, response, error=f"User '{target_username}' does not exist or is inactive.", upload_values=upload_values)
     if not consumer_number:
         return _render(request, response, error="Consumer Number is required.", upload_values=upload_values)

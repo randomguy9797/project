@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timezone
+from uuid import uuid4
 from fastapi import APIRouter, Request, Response, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -59,11 +60,11 @@ async def form_post(
     request: Request,
     response: Response,
     csrf_token: str = Form(...),
-    wss_service: str = Form(...),
-    consumer_number: str = Form(...),
-    consumer_first_name: str = Form(...),
+    wss_service: str = Form(""),
+    consumer_number: str = Form(""),
+    consumer_first_name: str = Form(""),
     consumer_second_name: str = Form(""),
-    consumer_last_name: str = Form(...),
+    consumer_last_name: str = Form(""),
     application_id: str = Form(""),
     new_first_name: str = Form(""),
     new_second_name: str = Form(""),
@@ -75,12 +76,12 @@ async def form_post(
     address: str = Form(""),
     account_number: str = Form(""),
     ifsc_code: str = Form(""),
-    upload_aadhar: UploadFile = File(...),
-    upload_pan: UploadFile = File(...),
-    upload_ownership: UploadFile = File(...),
-    upload_bond: UploadFile = File(None),
-    upload_energy_bill: UploadFile = File(None),
-    upload_other: UploadFile = File(None),
+    upload_aadhar: UploadFile | None = File(None),
+    upload_pan: UploadFile | None = File(None),
+    upload_ownership: UploadFile | None = File(None),
+    upload_bond: UploadFile | None = File(None),
+    upload_energy_bill: UploadFile | None = File(None),
+    upload_other: UploadFile | None = File(None),
 ):
     user = _require_user(request)
     if not user:
@@ -101,17 +102,11 @@ async def form_post(
 
     if not validate_csrf(request, csrf_token):
         return err("Invalid request. Please try again.")
-    if not wss_service.strip():
-        return err("WSS Service is required.")
-    if not consumer_number.strip():
-        return err("Consumer Number is required.")
-    if not consumer_first_name.strip() or not consumer_last_name.strip():
-        return err("Consumer First Name and Last Name are required.")
     if mobile_number.strip() and not validate_mobile(mobile_number.strip()):
         return err("Phone Number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.")
 
     username = user["username"]
-    normalized_consumer_number = consumer_number.strip()
+    normalized_consumer_number = consumer_number.strip() or f"submission-{uuid4().hex}"
     submission_year, submission_month = current_year_month()
     uploaded_keys = []
 
@@ -131,10 +126,6 @@ async def form_post(
             (upload_aadhar,    "Aadhar",             "aadhar"),
             (upload_pan,       "PAN Card",           "pan"),
             (upload_ownership, "Ownership Document", "ownership"),
-        ]:
-            key, fname, size = await process_upload(uf, label, slug)
-            uploaded_keys.append((key, fname, size, label))
-        for uf, label, slug in [
             (upload_bond,        "Bond",            "bond"),
             (upload_energy_bill, "Energy Bill",     "energy_bill"),
             (upload_other,       "Other Documents", "other_documents"),
